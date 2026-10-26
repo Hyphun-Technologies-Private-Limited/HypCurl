@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Hyphun\HypCurl\Tests;
 
+use Hyphun\HypCurl\Core\ConfigException;
 use Hyphun\HypCurl\Http\HttpClient;
 use Hyphun\HypCurl\Http\HttpException;
+use Hyphun\HypCurl\Http\JsonErrorHandler;
 use Hyphun\HypCurl\HypCurl;
 use Hyphun\HypCurl\Tests\Fixtures\TestApi;
 
@@ -47,11 +49,50 @@ final class SettingsTest extends TestCase
         $this->assertSame([], HypCurl::get(HYPCURL_TEST_SERVER . '/echo')->withoutProxy()->send()->json('cookies'));
     }
 
-    public function testDefaultsRejectUnknownOptions(): void
+    public function testDefaultsRejectUnknownOptionsWithSuggestions(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Unknown default option(s): proxyy');
-        HypCurl::defaults(['proxyy' => 'x']);
+        $e = $this->configError(fn () => HypCurl::defaults(['proxyy' => 'x']));
+        $this->assertInstanceOf(\InvalidArgumentException::class, $e);
+        $this->assertSame("Unknown 'defaults' option(s): 'proxyy'. 'proxyy': did you mean 'proxy'?", $e->getMessage());
+        $this->assertStringStartsWith('Allowed: headers, timeout', (string) $e->hint);
+    }
+
+    public function testMisplacedKeysExplainWhereTheyGo(): void
+    {
+        // The real-world mistake: json_errors inside 'defaults'
+        $inside = $this->configError(fn () => HypCurl::defaults(['proxy' => 'http://p:1', 'json_errors' => true]));
+        $this->assertStringContainsString("'json_errors' is a boot() option: put it next to 'defaults', not inside it.", $inside->getMessage());
+
+        // ...and the reverse: request settings at the top level of boot()
+        $outside = $this->configError(fn () => HypCurl::boot(['proxy' => 'http://p:1', 'timeout' => 5]));
+        $this->assertStringContainsString("'proxy' is a request setting: put it inside 'defaults' => [...].", $outside->getMessage());
+        $this->assertStringContainsString("'timeout' is a request setting", $outside->getMessage());
+
+        $base = $this->configError(fn () => HypCurl::defaults(['baseUrl' => 'https://x']));
+        $this->assertStringContainsString('differs per API', $base->getMessage());
+
+        $typo = $this->configError(fn () => HypCurl::boot(['defualts' => []]));
+        $this->assertStringContainsString("did you mean 'defaults'?", $typo->getMessage());
+    }
+
+    public function testConfigErrorsAreJsonReady(): void
+    {
+        $e = $this->configError(fn () => HypCurl::defaults(['json_errors' => true]));
+
+        $this->assertSame('config_error', $e->toArray()['error']['type']);
+        $this->assertSame(['type' => 'config_error', 'message' => $e->getMessage()], $e->toArray(debug: false)['error']);
+        $this->assertSame('config_error', JsonErrorHandler::toArray($e, debug: true)['error']['type']);
+        $this->assertSame(500, JsonErrorHandler::httpStatus($e));
+    }
+
+    private function configError(callable $call): ConfigException
+    {
+        try {
+            $call();
+        } catch (ConfigException $e) {
+            return $e;
+        }
+        $this->fail('Expected ConfigException');
     }
 
     public function testRedirectsAreFollowedByDefault(): void
@@ -115,7 +156,7 @@ final class SettingsTest extends TestCase
     {
         $client = HypCurl::client(['caBundle' => '/nope/ca.pem', 'retries' => 0]);
 
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(ConfigException::class);
         $this->expectExceptionMessage('CA bundle not found: /nope/ca.pem');
         $client->get(HYPCURL_TEST_SERVER . '/echo')->send();
     }

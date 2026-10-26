@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.2 - 2026-10-26
+
+- Setup mistakes throw `Core\ConfigException` (still an `InvalidArgumentException`) with clear fixes: misplaced keys say where they belong (`json_errors` inside `defaults`, `proxy` at the top level of `boot()`, `baseUrl` in `defaults`), typos get "did you mean" suggestions
+- `boot()` now validates its own keys
+- `json_errors` is registered before anything else in `boot()`, so setup mistakes are reported as JSON (`config_error`, HTTP 500) too
+- On the web, the JSON error handler also writes the full error details to PHP's error log
+
 ## 1.4.1 - 2026-10-26
 
 - README: table of contents, requirements, complete `boot()` options, `Response` error API (`error`, `failed()`, `throw()`), `trySend()` in the request reference, typed-exception example, accurate retry description

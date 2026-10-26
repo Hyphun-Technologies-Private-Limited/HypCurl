@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hyphun\HypCurl\Http;
 
 use Hyphun\HypCurl\Core\Config;
+use Hyphun\HypCurl\Core\ConfigException;
 use Hyphun\HypCurl\Core\Logger;
 
 /**
@@ -51,12 +52,12 @@ final class HttpClient
      */
     public static function setDefaults(array $defaults): void
     {
-        $unknown = array_diff(array_keys($defaults), self::DEFAULTABLE);
-        if ($unknown !== []) {
-            throw new \InvalidArgumentException(
-                'Unknown default option(s): ' . implode(', ', $unknown) . '. Allowed: ' . implode(', ', self::DEFAULTABLE),
-            );
-        }
+        $bootLevel = 'is a boot() option: put it next to \'defaults\', not inside it.';
+        ConfigException::assertKnownKeys($defaults, self::DEFAULTABLE, "'defaults'", [
+            'json_errors' => $bootLevel, 'logger' => $bootLevel, 'config_dir' => $bootLevel,
+            'env' => $bootLevel, 'values' => $bootLevel, 'base_path' => $bootLevel,
+            'baseUrl' => 'differs per API: set it in HypCurl::client([...]) or an ApiClient\'s options().',
+        ]);
         self::$defaults = $defaults;
     }
 
@@ -349,7 +350,10 @@ final class HttpClient
         }
         if ($verifySsl && $this->caBundle !== null) {
             if (!is_file($this->caBundle)) {
-                throw new \InvalidArgumentException("CA bundle not found: $this->caBundle (check the 'caBundle' option / HYPCURL_CA_BUNDLE)");
+                throw new ConfigException(
+                    "CA bundle not found: $this->caBundle",
+                    "Fix the 'caBundle' option / HYPCURL_CA_BUNDLE, or remove it to use the system CA store.",
+                );
             }
             $options[CURLOPT_CAINFO] = $this->caBundle;
         }

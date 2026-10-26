@@ -252,7 +252,16 @@ These defaults apply to the `HypCurl::get()/post()…` shortcuts, to `HypCurl::c
 
 **per request** (`->proxy()`, `->insecure()`, `->withoutRedirects()`…) > **client / API `options()`** > **`defaults`** > **`HYPCURL_*` config** > **built-in**
 
-Headers are merged rather than replaced. Unknown option names throw an error, so a typo like `proxyy` is caught. You can also change the defaults later with `HypCurl::defaults([...])`. Call `boot()` before you create clients: a `HypCurl::client()` made earlier keeps its settings. Full example: [examples/global_settings.php](examples/global_settings.php).
+`defaults` takes request settings only. `json_errors`, `logger`, `config_dir` and the other `boot()` options go next to it, not inside it:
+
+```php
+HypCurl::boot([
+    'defaults'    => ['proxy' => $proxy, 'timeout' => 20],   // request settings
+    'json_errors' => true,                                   // boot() option
+]);
+```
+
+Headers are merged rather than replaced. Unknown or misplaced keys raise a `ConfigException` that says where the key belongs, or suggests the right name for a typo like `proxyy`. You can also change the defaults later with `HypCurl::defaults([...])`. Call `boot()` before you create clients: a `HypCurl::client()` made earlier keeps its settings. Full example: [examples/global_settings.php](examples/global_settings.php).
 
 ## Requests
 
@@ -377,7 +386,9 @@ HypCurl::boot(['json_errors' => ['debug' => true]]);   // development: + hint, U
 // or HypCurl::jsonErrors(debug: false, allExceptions: false);
 ```
 
-On the web it responds `502 Bad Gateway`, or `504` for timeouts, with `Content-Type: application/json`. In the CLI it prints the JSON and exits with code 1. Other exceptions go to your existing handler unless you pass `'all' => true`.
+On the web it responds `502 Bad Gateway`, or `504` for timeouts, with `Content-Type: application/json`, and writes the full details to PHP's error log, so production responses can stay short without losing anything. In the CLI it prints the JSON and exits with code 1.
+
+Setup mistakes (an unknown option, a misplaced key, a missing CA file) are `ConfigException`s. They are reported as `{"type": "config_error"}` with status 500, and the message explains the fix. Other exceptions go to your existing handler unless you pass `'all' => true`.
 
 Secrets are hidden everywhere errors and logs appear: passwords in URLs, and `token`/`api_key`/`password`-style query parameters, are shown as `****`.
 

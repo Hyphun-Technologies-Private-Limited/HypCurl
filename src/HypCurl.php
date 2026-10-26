@@ -6,6 +6,7 @@ namespace Hyphun\HypCurl;
 
 use Hyphun\HypCurl\Api\ApiClient;
 use Hyphun\HypCurl\Core\Config;
+use Hyphun\HypCurl\Core\ConfigException;
 use Hyphun\HypCurl\Core\Logger;
 use Hyphun\HypCurl\Http\HttpClient;
 use Hyphun\HypCurl\Http\JsonErrorHandler;
@@ -41,23 +42,35 @@ use Hyphun\HypCurl\Http\Request;
  */
 final class HypCurl
 {
-    public const VERSION = '1.4.1';
+    public const VERSION = '1.4.2';
 
     private static ?HttpClient $shared = null;
 
     /** Call once at startup. Re-booting resets config, logger, defaults, the shared client and all API client singletons. */
+    private const BOOT_OPTIONS = ['config_dir', 'env', 'values', 'base_path', 'logger', 'defaults', 'json_errors'];
+
     public static function boot(array $options = []): void
     {
+        // JSON errors first, so even a setup mistake below is reported as JSON.
+        // (Also honoured when misplaced inside 'defaults'; that still raises a config error.)
+        $json = $options['json_errors'] ?? $options['defaults']['json_errors'] ?? null;
+        if (!empty($json)) {
+            self::jsonErrors((bool) (is_array($json) ? ($json['debug'] ?? false) : false), (bool) (is_array($json) ? ($json['all'] ?? false) : false));
+        }
+
+        $inDefaults = 'is a request setting: put it inside \'defaults\' => [...].';
+        ConfigException::assertKnownKeys($options, self::BOOT_OPTIONS, 'boot()', array_fill_keys(
+            ['proxy', 'noProxy', 'verifySsl', 'caBundle', 'followRedirects', 'maxRedirects', 'timeout', 'connectTimeout',
+             'retries', 'retryDelay', 'headers', 'cookies', 'cookieJar', 'throw'],
+            $inDefaults,
+        ));
+
         Config::configure(array_diff_key($options, ['logger' => true, 'defaults' => true, 'json_errors' => true]));
         Logger::reset();
         if (isset($options['logger'])) {
             Logger::instance()->useLogger($options['logger']);
         }
         self::defaults($options['defaults'] ?? []);
-        if (!empty($options['json_errors'])) {
-            $json = is_array($options['json_errors']) ? $options['json_errors'] : [];
-            self::jsonErrors($json['debug'] ?? false, $json['all'] ?? false);
-        }
     }
 
     /**

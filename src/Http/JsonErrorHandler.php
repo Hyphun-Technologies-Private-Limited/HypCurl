@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace Hyphun\HypCurl\Http;
 
+use Hyphun\HypCurl\Core\ConfigException;
+
 /**
  * Turns uncaught HypCurl exceptions into a JSON error instead of a PHP fatal error + stack trace.
  * Register it with HypCurl::jsonErrors() or HypCurl::boot(['json_errors' => true]).
  *
  * Web:  responds 502 (upstream failed) or 504 (upstream timed out) with Content-Type: application/json.
  * CLI:  prints the JSON and exits with code 1.
+ * HypCurl setup mistakes (ConfigException) are rendered too, as "config_error" with status 500.
+ * On the web, the full (debug) error is also written to the PHP error log.
  * Other exceptions go to the previously registered handler (or PHP's default),
  * unless $allExceptions is true.
  */
@@ -35,7 +39,7 @@ final class JsonErrorHandler
     /** @internal called by PHP for uncaught exceptions */
     public static function handle(\Throwable $e): void
     {
-        if (!$e instanceof HttpException && !self::$allExceptions) {
+        if (!$e instanceof HttpException && !$e instanceof ConfigException && !self::$allExceptions) {
             if (self::$previous !== null) {
                 (self::$previous)($e);
 
@@ -43,6 +47,10 @@ final class JsonErrorHandler
             }
             restore_exception_handler();
             throw $e; // let PHP report it as usual
+        }
+        if (PHP_SAPI !== 'cli') {
+            // Keep the full details in the server's error log, whatever the client is shown.
+            error_log('[HypCurl] ' . json_encode(self::toArray($e, debug: true), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
         }
         self::render($e, self::$debug);
         exit(1);
@@ -64,7 +72,7 @@ final class JsonErrorHandler
     /** JSON-ready array for any throwable (non-HypCurl ones become "internal_error"). */
     public static function toArray(\Throwable $e, bool $debug = false): array
     {
-        if ($e instanceof HttpException) {
+        if ($e instanceof HttpException || $e instanceof ConfigException) {
             return $e->toArray($debug);
         }
         $error = ['type' => 'internal_error', 'message' => $debug ? $e->getMessage() : 'Internal error'];

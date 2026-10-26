@@ -2,7 +2,8 @@
 
 Organised, reusable cURL toolkit for PHP 8.1+. Define each external API once as a small class, then call it from code or the terminal. Retries, timeouts, cookies, proxies, custom headers and logging are handled in one place.
 
-- **Singleton API clients:** `GitHub::instance()->repos()->find('owner/repo')`
+- **Ready-made template:** `hypcurl make:api` generates `HypClass`, a working API class you fill in
+- **Singleton API clients:** `HypClass::instance()->items()->find(7)`
 - **Fluent requests:** `$api->post('/orders')->json($data)->bearer($token)->retries(2)->send()`
 - **REST resources with no code:** `list`, `find`, `create`, `update`, `patch`, `delete`
 - **Cookie sessions:** kept in memory, or in a cookie-jar file that persists between runs
@@ -19,67 +20,89 @@ composer require hyphun/hypcurl
 
 ## Quick start
 
-### 1. Define an API
+### 1. Generate your API class
+
+```bash
+vendor/bin/hypcurl init        # once: creates hypcurl.php + config/hypcurl/
+vendor/bin/hypcurl make:api    # creates src/Api/HypClass.php and registers it
+```
+
+Pass a name to generate more classes, one per external API: `make:api Payments`, `make:api Sms`. The namespace and folder are read from your `composer.json` PSR-4 autoload; with `"App\\": "src/"` you get `App\Api\HypClass` in `src/Api/`. You can override them with `--namespace=... --path=...`.
+
+### 2. Fill it in
+
+The generated class works immediately: it points at httpbin.org, which echoes requests back. It has three marked sections for you to edit:
 
 ```php
 namespace App\Api;
 
-use Hyphun\HypCurl\Api\ApiClient;
-use Hyphun\HypCurl\Api\CrudResource;
-use Hyphun\HypCurl\Core\Config;
-use Hyphun\HypCurl\Http\Response;
-
-final class GitHub extends ApiClient
+final class HypClass extends ApiClient
 {
+    // 1. CONNECTION: base URL, auth, default headers, timeouts
     protected function options(): array
     {
         $config = Config::instance();
 
         return [
-            'baseUrl' => $config->get('GITHUB_BASE_URL', 'https://api.github.com'),
-            'headers' => [
-                'Accept' => 'application/vnd.github+json',
-                'Authorization' => 'Bearer ' . $config->require('GITHUB_TOKEN'),
-            ],
+            'baseUrl' => $config->get('HYP_CLASS_BASE_URL', 'https://httpbin.org'),
+            'headers' => array_filter([
+                'Accept' => 'application/json',
+                'Authorization' => ($token = $config->get('HYP_CLASS_TOKEN')) ? "Bearer $token" : null,
+            ]),
             'retries' => 2,
         ];
     }
 
-    /** Standard REST resource: list/find/create/update/patch/delete. */
-    public function gists(): CrudResource
+    // 2. RESOURCES: REST collections get list/find/create/update/patch/delete for free
+    public function items(): CrudResource
     {
-        return $this->resource(CrudResource::class, '/gists');
+        return $this->resource(CrudResource::class, '/items');
     }
 
-    /** One-off endpoint. */
-    public function user(string $username): Response
+    // 3. YOUR ENDPOINTS: one method per call; copy a pattern and edit it
+    public function search(string $query, array $filters = []): Response
     {
-        return $this->get('/users/' . rawurlencode($username))->send();
+        return $this->get('/search')->query(['q' => $query] + $filters)->send();
     }
+
+    public function createOrder(array $order): Response
+    {
+        return $this->post('/orders')->json($order)->send();
+    }
+
+    // ... also included: ping(), login() (cookie session), upload(), download(), originIp()
 }
 ```
 
-### 2. Use it
+Set its URL and token in `config/hypcurl/default.env` / `local.env`. The keys use the class name as a prefix:
+
+```
+HYP_CLASS_BASE_URL=https://api.yourservice.com
+HYP_CLASS_TOKEN=secret
+```
+
+### 3. Use it in code
 
 ```php
-use App\Api\GitHub;
+use App\Api\HypClass;
 
-$github = GitHub::instance();               // same instance everywhere
+$api = HypClass::instance();               // same instance everywhere
 
-$name  = $github->user('octocat')->json('name');
-$gists = $github->gists()->list(['per_page' => 5])->json();
-$new   = $github->gists()->create(['public' => false, 'files' => [...]]);
+$results = $api->search('php', ['page' => 2])->json('data');
+$order   = $api->createOrder(['item' => 'pen', 'qty' => 2])->json('id');
+$item    = $api->items()->find(7)->json();
 ```
 
-### 3. Or call it from the terminal
+### 4. Or from the terminal
 
 ```bash
-vendor/bin/hypcurl init          # creates hypcurl.php + config/hypcurl/
-# register 'github' => App\Api\GitHub::class in hypcurl.php, then:
-vendor/bin/hypcurl github                        # list methods
-vendor/bin/hypcurl github user octocat
-vendor/bin/hypcurl github gists.list per_page=5 -v
+vendor/bin/hypcurl hypclass                       # list methods
+vendor/bin/hypcurl hypclass search php page=2
+vendor/bin/hypcurl hypclass createOrder item=pen qty=2 -v
+vendor/bin/hypcurl hypclass items.find 7
 ```
+
+Without the generator, a class only needs to extend `Hyphun\HypCurl\Api\ApiClient` and implement `options()`.
 
 ## Configuration
 
@@ -196,6 +219,7 @@ Set it globally (`HYPCURL_PROXY`), per API (`'proxy' => ...` in `options()`), at
 
 ```
 vendor/bin/hypcurl init
+vendor/bin/hypcurl make:api [Name] [--namespace=App\Api] [--path=src/Api] [--force]
 vendor/bin/hypcurl <service>                                   list methods
 vendor/bin/hypcurl <service> <[resource.]method> [args...]     call a method
 

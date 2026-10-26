@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.0 - 2026-10-26
+
+- `hypcurl make:api [Name]`: generates a ready-to-edit API class (default `HypClass`) from a template, using the project's PSR-4 namespace, and registers it in `hypcurl.php`
+- `hypcurl init` now points to `make:api` as the next step
+
 ## 1.0.0 - 2026-10-26
 
 Initial release.

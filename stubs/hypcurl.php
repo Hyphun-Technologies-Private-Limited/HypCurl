@@ -5,9 +5,9 @@
  * In your own code, pass the same options to Hyphun\HypCurl\HypCurl::boot().
  */
 return [
-    // CLI name => your ApiClient subclass (must be autoloadable by your composer.json)
+    // CLI name => your ApiClient subclass (must be autoloadable by your composer.json).
+    // `vendor/bin/hypcurl make:api [Name]` generates a class and adds it here.
     'services' => [
-        // 'github' => App\Http\Api\GitHub::class,
     ],
 
     // Folder with default.env, {env}.env and local.env (secrets, git-ignored)

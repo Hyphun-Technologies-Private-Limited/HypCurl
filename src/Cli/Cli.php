@@ -54,6 +54,9 @@ final class Cli
             if (($positional[0] ?? null) === 'init') {
                 return $this->init();
             }
+            if (($positional[0] ?? null) === 'make:api') {
+                return $this->makeApi($positional[1] ?? 'HypClass', $flags);
+            }
             $this->loadProject($flags);
         } catch (\Throwable $e) {
             fwrite(STDERR, $e->getMessage() . "\n");
@@ -206,11 +209,127 @@ final class Cli
         Next steps:
           1. cp config/hypcurl/local.env.example config/hypcurl/local.env   (secrets)
           2. Add to .gitignore:  /config/hypcurl/local.env
-          3. Register your API classes in hypcurl.php, then: vendor/bin/hypcurl help
+          3. Generate your first API class:  vendor/bin/hypcurl make:api   (or make:api Payments)
 
         TXT;
 
         return 0;
+    }
+
+    /**
+     * Generate an API class from stubs/HypClass.php.stub and register it in hypcurl.php.
+     * Namespace/path come from the project's composer.json PSR-4 autoload (first entry + "\Api"),
+     * or from --namespace=... / --path=...
+     */
+    private function makeApi(string $class, array $flags): int
+    {
+        if (!preg_match('/^[A-Z][A-Za-z0-9]*$/', $class)) {
+            fwrite(STDERR, "Class name must be StudlyCase, e.g. Payments or HypClass\n");
+
+            return 1;
+        }
+        [$namespace, $dir, $autoloaded] = $this->apiLocation($flags);
+        $relative = "$dir/$class.php";
+        $file = "{$this->cwd}/$relative";
+        if (file_exists($file) && !isset($flags['force'])) {
+            fwrite(STDERR, "$relative already exists (use --force to overwrite)\n");
+
+            return 1;
+        }
+
+        $service = strtolower($class);
+        $prefix = strtoupper(preg_replace('/(?<!^)[A-Z]/', '_$0', $class));
+        $code = strtr((string) file_get_contents(dirname(__DIR__, 2) . '/stubs/HypClass.php.stub'), [
+            '{{namespace}}' => $namespace,
+            '{{class}}' => $class,
+            '{{service}}' => $service,
+            '{{prefix}}' => $prefix,
+        ]);
+        if (!is_dir(dirname($file)) && !mkdir(dirname($file), 0755, true)) {
+            fwrite(STDERR, 'Cannot create ' . dirname($file) . "\n");
+
+            return 1;
+        }
+        file_put_contents($file, $code);
+        echo "  created  $relative  ($namespace\\$class)\n";
+        $registered = $this->registerService($service, "$namespace\\$class");
+
+        echo "\nNext steps:\n";
+        $step = 1;
+        if (!$autoloaded) {
+            echo '  ' . $step++ . ". Add to composer.json autoload.psr-4:  \"" . str_replace('\\', '\\\\', $namespace) . "\\\\\": \"$dir/\"  then: composer dump-autoload\n";
+        }
+        if (!$registered) {
+            echo '  ' . $step++ . ". Add to 'services' in hypcurl.php:  '$service' => \\$namespace\\$class::class,  (or run: vendor/bin/hypcurl init)\n";
+        }
+        echo '  ' . $step++ . ". Set {$prefix}_BASE_URL (and {$prefix}_TOKEN) in config/hypcurl/default.env / local.env\n";
+        echo '  ' . $step++ . ". Edit $relative: replace the example endpoints with your API's\n";
+        echo '  ' . $step . ". Try it:  vendor/bin/hypcurl $service ping\n\n";
+
+        return 0;
+    }
+
+    /** @return array{0: string, 1: string, 2: bool} namespace, relative dir, covered by composer autoload */
+    private function apiLocation(array $flags): array
+    {
+        $namespace = isset($flags['namespace']) && $flags['namespace'] !== true ? trim((string) $flags['namespace'], '\\') : null;
+        $dir = isset($flags['path']) && $flags['path'] !== true ? trim((string) $flags['path'], '/') : null;
+
+        $composer = json_decode((string) @file_get_contents("{$this->cwd}/composer.json"), true);
+        $psr4 = $composer['autoload']['psr-4'] ?? [];
+        $baseNs = array_key_first($psr4);
+        if ($baseNs !== null) {
+            $baseDir = trim((string) (is_array($psr4[$baseNs]) ? $psr4[$baseNs][0] : $psr4[$baseNs]), '/');
+            $namespace ??= trim($baseNs, '\\') . '\\Api';
+            $dir ??= ($baseDir === '' ? '' : "$baseDir/") . 'Api';
+        }
+        $namespace ??= 'App\\Api';
+        $dir ??= 'src/Api';
+
+        // Is $namespace inside a PSR-4 mapping whose folder matches $dir?
+        $autoloaded = false;
+        foreach ($psr4 as $prefix => $paths) {
+            $prefix = trim($prefix, '\\');
+            foreach ((array) $paths as $path) {
+                $path = trim($path, '/');
+                $rest = trim(str_replace('\\', '/', substr($namespace, strlen($prefix))), '/');
+                $expected = trim("$path/$rest", '/');
+                if (($namespace === $prefix || str_starts_with($namespace, "$prefix\\")) && $expected === $dir) {
+                    $autoloaded = true;
+                }
+            }
+        }
+
+        return [$namespace, $dir, $autoloaded];
+    }
+
+    /** Add 'name' => \Class::class to the services array in hypcurl.php. */
+    private function registerService(string $service, string $fqcn): bool
+    {
+        $file = "{$this->cwd}/" . self::PROJECT_FILE;
+        if (!is_file($file)) {
+            return false;
+        }
+        $source = (string) file_get_contents($file);
+        if (str_contains($source, "$fqcn::class")) {
+            echo '  exists   ' . self::PROJECT_FILE . " already registers $fqcn\n";
+
+            return true;
+        }
+        $updated = preg_replace(
+            "/('services'\s*=>\s*\[)/",
+            "$1\n        '$service' => \\\\" . str_replace('\\', '\\\\', $fqcn) . '::class,',
+            $source,
+            1,
+            $count,
+        );
+        if ($count !== 1) {
+            return false;
+        }
+        file_put_contents($file, $updated);
+        echo '  updated  ' . self::PROJECT_FILE . "  ('$service' => \\$fqcn::class)\n";
+
+        return true;
     }
 
     /** @return array{0: list<string>, 1: array<string, string>, 2: array<string, string|true>} */
@@ -362,6 +481,8 @@ final class Cli
 
         Usage:
           hypcurl init                                      Create hypcurl.php + config/hypcurl/ here
+          hypcurl make:api [Name]                           Generate an API class (default: HypClass)
+                                                            --namespace=App\\Api --path=src/Api --force
           hypcurl <service>                                 List a service's methods
           hypcurl <service> <[resource.]method> [args...]   Call a method
 

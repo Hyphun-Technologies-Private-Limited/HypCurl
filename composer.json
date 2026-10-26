@@ -6,8 +6,8 @@
     "keywords": ["curl", "http", "http-client", "api", "rest", "cli", "cookies", "proxy"],
     "authors": [
         {
-            "name": "Raunak",
-            "email": "raunak@hyphun.com"
+            "name": "Leo",
+            "email": "leo@hyphun.com"
         }
     ],
     "require": {

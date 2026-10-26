@@ -72,6 +72,55 @@ final class CliTest extends TestCase
         $this->assertStringContainsString('search(string $term, array $filters = [])', $out);
     }
 
+    public function testMakeApiGeneratesWorkingClassAndRegistersIt(): void
+    {
+        file_put_contents("$this->dir/composer.json", json_encode(['autoload' => ['psr-4' => ['Acme\\' => 'src/']]]));
+        file_put_contents("$this->dir/hypcurl.php", <<<PHP
+            <?php
+            return [
+                'services' => [
+                ],
+                'values' => ['HYPCURL_LOG_LEVEL' => 'OFF', 'HYP_CLASS_BASE_URL' => '{$this->server()}'],
+                'examples' => false,
+            ];
+            PHP);
+
+        [$code, $out] = $this->cli('make:api');
+        $file = "$this->dir/src/Api/HypClass.php";
+
+        $this->assertSame(0, $code);
+        $this->assertStringContainsString('created  src/Api/HypClass.php  (Acme\Api\HypClass)', $out);
+        $this->assertStringNotContainsString('composer dump-autoload', $out, 'namespace is already covered by PSR-4');
+        $this->assertStringContainsString("namespace Acme\\Api;", (string) file_get_contents($file));
+        $this->assertStringContainsString("'hypclass' => \\Acme\\Api\\HypClass::class,", (string) file_get_contents("$this->dir/hypcurl.php"));
+
+        // The generated class works as-is.
+        require $file;
+        [$code, $out] = $this->cli('hypclass', 'search', 'php', 'page=2');
+        $this->assertSame(0, $code);
+        $this->assertSame('/anything/search', $out['path']);
+        $this->assertSame(['q' => 'php', 'page' => '2'], $out['query']);
+
+        $this->assertSame(1, $this->cli('make:api')[0], 'refuses to overwrite');
+        $this->assertSame(0, $this->cli('make:api', '--force')[0]);
+        $this->assertSame(1, $this->cli('make:api', 'bad-name')[0]);
+    }
+
+    public function testMakeApiWithCustomNamespaceOutsideAutoload(): void
+    {
+        [$code, $out] = $this->cli('make:api', 'Payments', '--namespace=Billing\Clients', '--path=lib/Clients');
+
+        $this->assertSame(0, $code);
+        $this->assertFileExists("$this->dir/lib/Clients/Payments.php");
+        $this->assertStringContainsString('composer dump-autoload', $out);
+        $this->assertStringContainsString('PAYMENTS_BASE_URL', $out);
+    }
+
+    private function server(): string
+    {
+        return HYPCURL_TEST_SERVER;
+    }
+
     public function testInitScaffoldsWithoutOverwriting(): void
     {
         unlink("$this->dir/hypcurl.php");

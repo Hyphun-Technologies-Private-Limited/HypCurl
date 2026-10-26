@@ -22,7 +22,7 @@ use Hyphun\HypCurl\Core\Logger;
  */
 final class HypCurl
 {
-    public const VERSION = '1.0.0';
+    public const VERSION = '1.1.0';
 
     /** Call once at startup. Re-booting resets config, logger and all API client singletons. */
     public static function boot(array $options = []): void

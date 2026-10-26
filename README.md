@@ -16,11 +16,17 @@ Organised, reusable cURL toolkit for PHP 8.1+. Define each external API once as 
 - **CLI:** call any API method with `vendor/bin/hypcurl`, and see the equivalent `curl` command with `-v`
 - **No dependencies** beyond `ext-curl`. Optionally logs through any PSR-3 logger.
 
+## Contents
+
+[Installation](#installation) · [Quick start](#quick-start) · [Use it directly](#use-it-directly-no-extra-class) · [Configuration](#configuration) · [Global settings](#global-settings-set-once-used-everywhere) · [Requests](#requests) · [Responses](#responses) · [Errors](#errors) · [Cookies](#cookies-chained-requests) · [Headers](#headers) · [Proxy](#proxy) · [SSL / TLS](#ssl--tls) · [Redirects](#redirects) · [CLI](#cli-reference) · [Long-running processes](#long-running-processes) · [Development](#development)
+
 ## Installation
 
 ```bash
 composer require hyphun/hypcurl
 ```
+
+Requires PHP 8.1+ with the `curl` and `json` extensions. `fileinfo` is optional and is used to detect MIME types for uploads. See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 
 ## Quick start
 
@@ -132,8 +138,8 @@ $id = $order->json('id');
 **A configured client in your existing class.** Set the base URL, auth, headers and retries once, then use the client in any method:
 
 ```php
+use Hyphun\HypCurl\Http\ClientException;
 use Hyphun\HypCurl\Http\HttpClient;
-use Hyphun\HypCurl\Http\HttpException;
 use Hyphun\HypCurl\HypCurl;
 
 class OrderService
@@ -154,8 +160,8 @@ class OrderService
     {
         try {
             return $this->shop->get("/orders/$id")->send()->json();
-        } catch (HttpException $e) {
-            if ($e->response?->status === 404) {
+        } catch (ClientException $e) {      // 4xx
+            if ($e->type === 'not_found') {
                 return null;
             }
             throw $e;
@@ -175,17 +181,19 @@ Each `HypCurl::client()` has its own settings, cookies and connection. Every req
 
 ## Configuration
 
-HypCurl works without any setup. It reads `HYPCURL_*` environment variables and falls back to built-in defaults. To use config files, or to plug in your app's logger, call `boot()` once at startup:
+HypCurl works without any setup. It reads `HYPCURL_*` environment variables and falls back to built-in defaults. To use config files, set global defaults, or plug in your app's logger, call `boot()` once at startup. Every key is optional:
 
 ```php
 use Hyphun\HypCurl\HypCurl;
 
 HypCurl::boot([
-    'config_dir' => __DIR__ . '/config/hypcurl',   // default.env, {env}.env, local.env
-    'env'        => 'prod',                        // default: HYPCURL_ENV, APP_ENV, or "dev"
-    'values'     => ['HYPCURL_TIMEOUT' => 15],     // highest priority
-    'base_path'  => __DIR__,                       // for relative paths (cookie jar); default: cwd
-    'logger'     => $monolog,                      // any PSR-3 logger
+    'config_dir'  => __DIR__ . '/config/hypcurl',   // default.env, {env}.env, local.env
+    'env'         => 'prod',                        // default: HYPCURL_ENV, APP_ENV, or "dev"
+    'values'      => ['HYPCURL_TIMEOUT' => 15],     // HYPCURL_* keys, highest priority
+    'base_path'   => __DIR__,                       // for relative paths (cookie jar, CA bundle); default: cwd
+    'logger'      => $monolog,                      // any PSR-3 logger
+    'defaults'    => ['proxy' => '...', 'verifySsl' => true],   // see Global settings
+    'json_errors' => true,                          // see Errors
 ]);
 ```
 
@@ -195,7 +203,7 @@ Priority, highest first: `values` → environment variables → `local.env` → 
 |---|---|---|
 | `HYPCURL_TIMEOUT` | `30` | Total request timeout (s) |
 | `HYPCURL_CONNECT_TIMEOUT` | `10` | Connect timeout (s) |
-| `HYPCURL_RETRIES` | `0` | Retries on network error, 429, 5xx |
+| `HYPCURL_RETRIES` | `0` | Retries on temporary failures: timeouts, connection/DNS/proxy errors, 429, 5xx (not on TLS errors or redirect loops) |
 | `HYPCURL_RETRY_DELAY_MS` | `500` | First retry delay, doubles each retry |
 | `HYPCURL_VERIFY_SSL` | `true` | Verify TLS certificate + hostname (`false` = `curl -k`) |
 | `HYPCURL_CA_BUNDLE` | | Extra CA certificate file (PEM) to trust |
@@ -264,7 +272,7 @@ $res = $api->post('/orders')
     ->timeout(10)
     ->retries(3)
     ->saveTo('/tmp/file.pdf')                  // stream large downloads to disk
-    ->send();
+    ->send();                                  // throws on failure; ->trySend() never throws
 ```
 
 All of these work the same on `HypCurl::get(...)`, on a `HypCurl::client()`, and inside an API class.
@@ -272,8 +280,11 @@ All of these work the same on `HypCurl::get(...)`, on a `HypCurl::client()`, and
 ## Responses
 
 ```php
-$res->status;              // 200
-$res->ok();                // 2xx
+$res->status;              // 200 (0 if no response arrived)
+$res->ok();                // 2xx and no error
+$res->failed();            // the opposite
+$res->error;               // the HttpException, when sent with trySend() / 'throw' => false
+$res->throw();             // throw that error now (returns $res if all is well)
 $res->json();              // decoded body
 $res->json('data.0.id');   // dot path
 $res->header('content-type');

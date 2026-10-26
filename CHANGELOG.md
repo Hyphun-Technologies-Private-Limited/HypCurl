@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.1 - 2026-10-26
+
+- README: table of contents, requirements, complete `boot()` options, `Response` error API (`error`, `failed()`, `throw()`), `trySend()` in the request reference, typed-exception example, accurate retry description
+
 ## 1.4.0 - 2026-10-26
 
 - Structured, readable errors: `HttpException` subclasses `NetworkException`, `TimeoutException`, `ProxyException`, `SslException`, `ClientException` (4xx), `ServerException` (5xx), each with `type`, `reason`, `hint`, `status()`, `retryable()`, curl code/message

@@ -41,7 +41,7 @@ use Hyphun\HypCurl\Http\Request;
  */
 final class HypCurl
 {
-    public const VERSION = '1.4.0';
+    public const VERSION = '1.4.1';
 
     private static ?HttpClient $shared = null;
 

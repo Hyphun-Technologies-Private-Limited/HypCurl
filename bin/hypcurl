@@ -1,0 +1,27 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+// Locate Composer's autoloader: installed as a dependency (vendor/bin proxy) or developing this package.
+$autoload = $GLOBALS['_composer_autoload_path'] ?? null;
+if ($autoload === null) {
+    foreach ([__DIR__ . '/../vendor/autoload.php', __DIR__ . '/../../../autoload.php'] as $candidate) {
+        if (is_file($candidate)) {
+            $autoload = $candidate;
+            break;
+        }
+    }
+}
+if ($autoload === null) {
+    fwrite(STDERR, "HypCurl: Composer autoloader not found. Run `composer install`.\n");
+    exit(1);
+}
+require $autoload;
+
+if (!extension_loaded('curl')) {
+    fwrite(STDERR, "HypCurl: the PHP curl extension is required.\n");
+    exit(1);
+}
+
+exit((new Hyphun\HypCurl\Cli\Cli())->run(array_slice($argv, 1)));

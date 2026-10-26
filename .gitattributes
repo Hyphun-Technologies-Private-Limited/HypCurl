@@ -1,0 +1,8 @@
+# Keep the Composer dist archive small: dev-only files are excluded.
+/.github            export-ignore
+/tests              export-ignore
+/examples           export-ignore
+/.gitattributes     export-ignore
+/.gitignore         export-ignore
+/phpunit.xml.dist   export-ignore
+/CHANGELOG.md       export-ignore

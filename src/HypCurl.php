@@ -21,6 +21,12 @@ use Hyphun\HypCurl\Http\Request;
  *       'values'     => ['HYPCURL_TIMEOUT' => 10],    // highest priority
  *       'base_path'  => __DIR__,                      // for relative paths (cookie jar); default: cwd
  *       'logger'     => $psrLogger,                   // any PSR-3 logger
+ *       'defaults'   => [                             // applied to EVERY client and request
+ *           'proxy'     => 'http://10.0.0.1:3128',
+ *           'verifySsl' => true,
+ *           'headers'   => ['X-App' => 'my-app'],
+ *           'timeout'   => 20,
+ *       ],
  *   ]);
  *
  * Use directly from any class:
@@ -33,20 +39,34 @@ use Hyphun\HypCurl\Http\Request;
  */
 final class HypCurl
 {
-    public const VERSION = '1.2.0';
+    public const VERSION = '1.3.0';
 
     private static ?HttpClient $shared = null;
 
-    /** Call once at startup. Re-booting resets config, logger, the shared client and all API client singletons. */
+    /** Call once at startup. Re-booting resets config, logger, defaults, the shared client and all API client singletons. */
     public static function boot(array $options = []): void
     {
-        Config::configure(array_diff_key($options, ['logger' => true]));
+        Config::configure(array_diff_key($options, ['logger' => true, 'defaults' => true]));
         Logger::reset();
-        ApiClient::resetAll();
-        self::$shared = null;
         if (isset($options['logger'])) {
             Logger::instance()->useLogger($options['logger']);
         }
+        self::defaults($options['defaults'] ?? []);
+    }
+
+    /**
+     * Settings for every client created from now on: proxy, verifySsl, caBundle, headers, timeout,
+     * connectTimeout, retries, retryDelay, followRedirects, throw, cookies, cookieJar, noProxy.
+     * Same names as client options. A client's own options, and per-request calls, still win.
+     *
+     * Resets the shared client and API singletons so they pick the defaults up.
+     * Clients you created yourself with HypCurl::client() before this call keep their settings.
+     */
+    public static function defaults(array $defaults): void
+    {
+        HttpClient::setDefaults($defaults);
+        ApiClient::resetAll();
+        self::$shared = null;
     }
 
     public static function config(): Config

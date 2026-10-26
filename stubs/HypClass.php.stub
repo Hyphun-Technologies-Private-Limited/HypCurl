@@ -42,8 +42,12 @@ final class {{class}} extends ApiClient
             ]),
             'timeout' => $config->int('{{prefix}}_TIMEOUT', 30),
             'retries' => 2, // retry network errors, 429 and 5xx
-            // 'proxy'     => $config->get('{{prefix}}_PROXY'),
-            // 'cookieJar' => '.hypcurl/{{service}}-cookies.txt',   // keep login cookies between runs
+            // 'proxy'           => $config->get('{{prefix}}_PROXY'),
+            // 'verifySsl'       => false,                  // self-signed dev server only
+            // 'caBundle'        => 'certs/internal-ca.pem', // trust a private CA instead
+            // 'followRedirects' => false,                  // or 'maxRedirects' => 3
+            // 'cookieJar'       => '.hypcurl/{{service}}-cookies.txt',   // keep login cookies between runs
+            // Settings shared by ALL APIs belong in HypCurl::boot(['defaults' => [...]]) instead.
         ];
     }
 

@@ -10,7 +10,8 @@ use Hyphun\HypCurl\Core\Logger;
 /**
  * The ONE place that talks to ext-curl. Every API call in the project goes through send().
  *
- * Options (all optional; unset ones fall back to Config, see Config::DEFAULTS):
+ * Options. Priority (highest wins): per-request setting > these client options >
+ * global defaults (HypCurl::boot(['defaults' => [...]])) > HYPCURL_* config > built-in.
  *   baseUrl          string   prefix for relative paths
  *   headers          array    default headers for every request; added on top of HYPCURL_HEADERS from config
  *                             (["Name" => "value"], a null value removes a header)
@@ -18,8 +19,11 @@ use Hyphun\HypCurl\Core\Logger;
  *   connectTimeout   int      seconds                         (HYPCURL_CONNECT_TIMEOUT)
  *   retries          int      retries on network error/429/5xx (HYPCURL_RETRIES)
  *   retryDelay       int      base delay in ms, doubles each retry (HYPCURL_RETRY_DELAY_MS)
- *   verifySsl        bool                                     (HYPCURL_VERIFY_SSL)
- *   followRedirects  bool     default true
+ *   verifySsl        bool     verify the server's TLS certificate + hostname (HYPCURL_VERIFY_SSL, default true)
+ *                             false = like `curl -k`; only for local/dev servers with self-signed certs
+ *   caBundle         string   CA certificate file (PEM) to trust, e.g. your company's internal CA (HYPCURL_CA_BUNDLE)
+ *   followRedirects  bool     follow 3xx Location redirects, like `curl -L` (HYPCURL_FOLLOW_REDIRECTS, default true)
+ *   maxRedirects     int      give up after this many redirects (HYPCURL_MAX_REDIRECTS, default 10)
  *   throw            bool     throw HttpException on 4xx/5xx, default true
  *   cookies          bool     keep a cookie session like a browser (HYPCURL_COOKIES, default true)
  *   cookieJar        string   file to load/save cookies so they survive between runs (HYPCURL_COOKIE_JAR)
@@ -32,6 +36,36 @@ final class HttpClient
     /** Header values hidden in logs / printed curl commands. */
     private const SECRET_HEADERS = ['cookie', 'x-api-key', 'api-key', 'x-auth-token', 'x-access-token'];
 
+    /** Option names allowed in global defaults (everything except baseUrl). */
+    private const DEFAULTABLE = [
+        'headers', 'timeout', 'connectTimeout', 'retries', 'retryDelay', 'verifySsl', 'caBundle',
+        'followRedirects', 'maxRedirects', 'throw', 'cookies', 'cookieJar', 'proxy', 'noProxy',
+    ];
+
+    /** @var array<string, mixed> applied to every client created afterwards */
+    private static array $defaults = [];
+
+    /**
+     * Options applied to every HttpClient created from now on (prefer HypCurl::boot(['defaults' => ...])).
+     * Clients keep their own options on top; headers are merged.
+     */
+    public static function setDefaults(array $defaults): void
+    {
+        $unknown = array_diff(array_keys($defaults), self::DEFAULTABLE);
+        if ($unknown !== []) {
+            throw new \InvalidArgumentException(
+                'Unknown default option(s): ' . implode(', ', $unknown) . '. Allowed: ' . implode(', ', self::DEFAULTABLE),
+            );
+        }
+        self::$defaults = $defaults;
+    }
+
+    /** @return array<string, mixed> */
+    public static function defaults(): array
+    {
+        return self::$defaults;
+    }
+
     private string $baseUrl;
     /** @var array<string, string> */
     private array $headers;
@@ -40,7 +74,9 @@ final class HttpClient
     private int $retries;
     private int $retryDelayMs;
     private bool $verifySsl;
+    private ?string $caBundle;
     private bool $followRedirects;
+    private int $maxRedirects;
     private bool $throw;
     private bool $cookies;
     private ?string $cookieJar;
@@ -55,18 +91,23 @@ final class HttpClient
         $this->log = Logger::instance();
 
         $this->baseUrl = rtrim($options['baseUrl'] ?? '', '/');
-        // Priority: built-in < HYPCURL_HEADERS (config) < client options < per-request headers
+        // Priority: built-in < HYPCURL_HEADERS (config) < global defaults < client options < per-request headers
         $this->headers = Headers::merge(
             ['User-Agent' => $config->get('HYPCURL_USER_AGENT', 'HypCurl/1.0'), 'Accept' => 'application/json'],
             Headers::parse($config->get('HYPCURL_HEADERS', '')),
+            self::$defaults['headers'] ?? [],
             $options['headers'] ?? [],
         );
+        $options += self::$defaults;
         $this->timeout = $options['timeout'] ?? $config->int('HYPCURL_TIMEOUT', 30);
         $this->connectTimeout = $options['connectTimeout'] ?? $config->int('HYPCURL_CONNECT_TIMEOUT', 10);
         $this->retries = $options['retries'] ?? $config->int('HYPCURL_RETRIES', 0);
         $this->retryDelayMs = $options['retryDelay'] ?? $config->int('HYPCURL_RETRY_DELAY_MS', 500);
         $this->verifySsl = $options['verifySsl'] ?? $config->bool('HYPCURL_VERIFY_SSL', true);
-        $this->followRedirects = $options['followRedirects'] ?? true;
+        $ca = $options['caBundle'] ?? $config->get('HYPCURL_CA_BUNDLE');
+        $this->caBundle = ($ca === null || $ca === '') ? null : $config->path($ca);
+        $this->followRedirects = $options['followRedirects'] ?? $config->bool('HYPCURL_FOLLOW_REDIRECTS', true);
+        $this->maxRedirects = $options['maxRedirects'] ?? $config->int('HYPCURL_MAX_REDIRECTS', 10);
         $this->throw = $options['throw'] ?? true;
         $this->cookies = $options['cookies'] ?? $config->bool('HYPCURL_COOKIES', true);
         $jar = $options['cookieJar'] ?? $config->get('HYPCURL_COOKIE_JAR');
@@ -76,6 +117,23 @@ final class HttpClient
             $this->proxy = ''; // '' makes curl ignore http_proxy/https_proxy env vars too
         }
         $this->noProxy = $options['noProxy'] ?? $config->get('HYPCURL_NO_PROXY');
+    }
+
+    /** Follow redirects (and how many at most) for all later requests from this client. */
+    public function setFollowRedirects(bool $follow, ?int $max = null): self
+    {
+        $this->followRedirects = $follow;
+        $this->maxRedirects = $max ?? $this->maxRedirects;
+
+        return $this;
+    }
+
+    /** Turn TLS certificate verification on/off for all later requests from this client. */
+    public function setVerifySsl(bool $verify): self
+    {
+        $this->verifySsl = $verify;
+
+        return $this;
     }
 
     /** Change the proxy for all later requests from this client (null = no proxy at all). */
@@ -216,7 +274,10 @@ final class HttpClient
             throw $error;
         }
 
-        $summary = sprintf('← %d in %.3fs%s', $response->status, $response->time, $request->saveTo ? " (saved to $request->saveTo)" : '');
+        $summary = sprintf('← %d in %.3fs', $response->status, $response->time)
+            . ($response->redirects > 0 ? " after $response->redirects redirect(s) → $response->finalUrl" : '')
+            . ($response->redirectUrl !== null ? " (redirect to $response->redirectUrl not followed)" : '')
+            . ($request->saveTo ? " (saved to $request->saveTo)" : '');
         $response->failed() ? $this->log->error($summary) : $this->log->info($summary);
 
         return $this->throw ? $response->throw() : $response;
@@ -235,9 +296,10 @@ final class HttpClient
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT => $request->timeout ?? $this->timeout,
             CURLOPT_CONNECTTIMEOUT => $this->connectTimeout,
-            CURLOPT_FOLLOWLOCATION => $this->followRedirects,
-            CURLOPT_SSL_VERIFYPEER => $this->verifySsl,
-            CURLOPT_SSL_VERIFYHOST => $this->verifySsl ? 2 : 0,
+            CURLOPT_FOLLOWLOCATION => $follow = $request->followRedirects ?? $this->followRedirects,
+            CURLOPT_MAXREDIRS => $request->maxRedirects ?? $this->maxRedirects,
+            CURLOPT_SSL_VERIFYPEER => $verifySsl = $request->verifySsl ?? $this->verifySsl,
+            CURLOPT_SSL_VERIFYHOST => $verifySsl ? 2 : 0,
             CURLOPT_ENCODING => '', // accept any compression curl supports
             CURLOPT_HTTPHEADER => Headers::toCurl($headers),
             CURLOPT_HEADERFUNCTION => function ($ch, string $line) use (&$responseHeaders, &$responseCookies): int {
@@ -258,11 +320,25 @@ final class HttpClient
                 return strlen($line);
             },
         ];
+        if ($follow) {
+            // Never let a redirect switch to file://, ftp://, etc.
+            if (defined('CURLOPT_REDIR_PROTOCOLS_STR')) {
+                $options[CURLOPT_REDIR_PROTOCOLS_STR] = 'http,https';
+            } elseif (defined('CURLOPT_REDIR_PROTOCOLS')) {
+                $options[CURLOPT_REDIR_PROTOCOLS] = CURLPROTO_HTTP | CURLPROTO_HTTPS;
+            }
+        }
         if ($request->method === 'HEAD') {
             $options[CURLOPT_NOBODY] = true;
         }
         if ($request->basicAuth !== null) {
             $options[CURLOPT_USERPWD] = $request->basicAuth;
+        }
+        if ($verifySsl && $this->caBundle !== null) {
+            if (!is_file($this->caBundle)) {
+                throw new HttpException("CA bundle not found: $this->caBundle");
+            }
+            $options[CURLOPT_CAINFO] = $this->caBundle;
         }
 
         // Cookies: the engine keeps the session; a jar file persists it between runs.
@@ -322,6 +398,9 @@ final class HttpClient
             is_string($body) ? $body : '',
             (float) curl_getinfo($ch, CURLINFO_TOTAL_TIME),
             $responseCookies,
+            (string) (curl_getinfo($ch, CURLINFO_EFFECTIVE_URL) ?: $url),
+            (int) curl_getinfo($ch, CURLINFO_REDIRECT_COUNT),
+            curl_getinfo($ch, CURLINFO_REDIRECT_URL) ?: null,
         );
     }
 
@@ -403,6 +482,14 @@ final class HttpClient
             if ($proxy !== '' && $this->noProxy !== null) {
                 array_push($parts, '--noproxy', escapeshellarg($this->noProxy));
             }
+        }
+        if ($request->followRedirects ?? $this->followRedirects) {
+            array_push($parts, '-L', '--max-redirs', (string) ($request->maxRedirects ?? $this->maxRedirects));
+        }
+        if (!($request->verifySsl ?? $this->verifySsl)) {
+            $parts[] = '-k';
+        } elseif ($this->caBundle !== null) {
+            array_push($parts, '--cacert', escapeshellarg($this->caBundle));
         }
         if ($request->saveTo !== null) {
             $parts[] = '-o';

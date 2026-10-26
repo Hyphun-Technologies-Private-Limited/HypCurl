@@ -30,6 +30,10 @@ final class Request
     public array $cookies = [];
     /** null = use the client's proxy, '' = no proxy for this request */
     public ?string $proxy = null;
+    /** null = use the client's setting */
+    public ?bool $verifySsl = null;
+    public ?bool $followRedirects = null;
+    public ?int $maxRedirects = null;
 
     public function __construct(
         public string $method,
@@ -182,6 +186,35 @@ final class Request
     public function withoutProxy(): self
     {
         return $this->proxy('');
+    }
+
+    /** Verify (true) or skip (false) the TLS certificate check for this request only. */
+    public function verifySsl(bool $verify = true): self
+    {
+        $this->verifySsl = $verify;
+
+        return $this;
+    }
+
+    /** Follow 3xx redirects for this request (like `curl -L`), optionally limiting how many. */
+    public function followRedirects(bool $follow = true, ?int $max = null): self
+    {
+        $this->followRedirects = $follow;
+        $this->maxRedirects = $max;
+
+        return $this;
+    }
+
+    /** Don't follow redirects: get the 3xx response itself ($res->redirectUrl / header('location')). */
+    public function withoutRedirects(): self
+    {
+        return $this->followRedirects(false);
+    }
+
+    /** Skip TLS certificate verification, like `curl -k`. Only for dev servers with self-signed certs. */
+    public function insecure(): self
+    {
+        return $this->verifySsl(false);
     }
 
     /** Stream the response body into a file (downloads). */

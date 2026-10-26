@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.0 - 2026-10-26
+
+- Global settings: `HypCurl::boot(['defaults' => [...]])` / `HypCurl::defaults([...])` apply proxy, TLS, redirects, timeouts, retries, headers, cookies to every client; client options and per-request calls still win; unknown keys are rejected
+- TLS: per-request `->insecure()` / `->verifySsl()`, `caBundle` option (`HYPCURL_CA_BUNDLE`), `$api->withSslVerification()`, CLI `-k` / `--cacert`
+- Redirects: `maxRedirects` option (`HYPCURL_MAX_REDIRECTS`), `HYPCURL_FOLLOW_REDIRECTS`, per-request `->followRedirects()` / `->withoutRedirects()`, `$api->withRedirects()`, CLI `--no-follow` / `--max-redirs`; redirects restricted to http/https
+- Response: `finalUrl`, `redirects`, `redirectUrl`, `isRedirect()`
+- Printed curl commands now include `-L`, `--max-redirs`, `-k`, `--cacert`
+- New example: `examples/global_settings.php`
+
 ## 1.2.0 - 2026-10-26
 
 - Direct use without an API class: `HypCurl::get/post/put/patch/delete/request()` with full URLs (shared client that keeps cookies) and `HypCurl::client([...])` for a configured client inside existing classes

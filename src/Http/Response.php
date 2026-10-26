@@ -12,6 +12,9 @@ final class Response
     /**
      * @param array<string, string> $headers lower-cased header names
      * @param array<string, string> $cookies cookies set by this response (Set-Cookie), name => value
+     * @param ?string $finalUrl    URL that produced this response, after following redirects
+     * @param int $redirects       number of redirects followed
+     * @param ?string $redirectUrl where a redirect would have gone, when redirects were NOT followed
      */
     public function __construct(
         public readonly string $method,
@@ -21,7 +24,16 @@ final class Response
         public readonly string $body,
         public readonly float $time,
         public readonly array $cookies = [],
+        public readonly ?string $finalUrl = null,
+        public readonly int $redirects = 0,
+        public readonly ?string $redirectUrl = null,
     ) {
+    }
+
+    /** 3xx response (only seen when redirects are not followed). */
+    public function isRedirect(): bool
+    {
+        return $this->status >= 300 && $this->status < 400;
     }
 
     /** Value of a cookie this response set, e.g. $login->cookie('session'). */

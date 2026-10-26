@@ -66,6 +66,22 @@ abstract class ApiClient
         return $this;
     }
 
+    /** Follow redirects (and how many at most) for all later requests to this API. */
+    public function withRedirects(bool $follow, ?int $max = null): static
+    {
+        $this->http->setFollowRedirects($follow, $max);
+
+        return $this;
+    }
+
+    /** Turn TLS certificate verification on/off for all later requests to this API. */
+    public function withSslVerification(bool $verify): static
+    {
+        $this->http->setVerifySsl($verify);
+
+        return $this;
+    }
+
     /** Route all later requests through a proxy (null = none). */
     public function withProxy(?string $proxy, ?string $noProxy = null): static
     {

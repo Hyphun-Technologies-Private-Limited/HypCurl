@@ -36,6 +36,16 @@ if ($path === '/flaky') {
     echo json_encode(['attempt' => $count + 1]);
     return;
 }
+if (preg_match('#^/redirect/(\d+)$#', $path, $m)) {
+    $n = (int) $m[1];
+    header('Location: ' . ($n > 1 ? '/redirect/' . ($n - 1) : '/echo?redirected=1'), true, 302);
+    echo json_encode(['redirecting' => $n]);
+    return;
+}
+if ($path === '/redirect-to-file') {
+    header('Location: file:///etc/passwd', true, 302);
+    return;
+}
 if (preg_match('#^/sleep/(\d+)$#', $path, $m)) {
     sleep((int) $m[1]);
     echo json_encode(['slept' => (int) $m[1]]);

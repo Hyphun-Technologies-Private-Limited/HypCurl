@@ -77,6 +77,18 @@ final class Cli
         if (isset($flags['proxy'])) {
             $config->set('HYPCURL_PROXY', (string) $flags['proxy']);
         }
+        if (isset($flags['no-follow'])) {
+            $config->set('HYPCURL_FOLLOW_REDIRECTS', 'false');
+        }
+        if (isset($flags['max-redirs']) && $flags['max-redirs'] !== true) {
+            $config->set('HYPCURL_MAX_REDIRECTS', (string) (int) $flags['max-redirs']);
+        }
+        if (isset($flags['k']) || isset($flags['insecure'])) {
+            $config->set('HYPCURL_VERIFY_SSL', 'false');
+        }
+        if (isset($flags['cacert']) && $flags['cacert'] !== true) {
+            $config->set('HYPCURL_CA_BUNDLE', (string) $flags['cacert']);
+        }
         if (isset($flags['no-proxy'])) {
             $config->set('HYPCURL_PROXY', 'none');
         }
@@ -504,6 +516,10 @@ final class Cli
           --jar[=file]   save/load cookies in a file so separate runs share a session
                          (default file: .hypcurl/cookies.txt)
           --no-cookies   don't keep a cookie session
+          --no-follow    don't follow redirects (show the 3xx response itself)
+          --max-redirs=N follow at most N redirects (default 10)
+          -k, --insecure skip TLS certificate verification (self-signed dev servers only)
+          --cacert=<f>   trust this CA certificate file (PEM), e.g. an internal company CA
           --proxy=<url>  send through a proxy, e.g. http://127.0.0.1:8080 or socks5h://host:1080
           --no-proxy     never use a proxy (ignores http_proxy env vars too)
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.3 - 2026-10-26
+
+- Fixed: with `json_errors` enabled, an uncaught non-HypCurl error (e.g. calling an undefined function) caused infinite recursion ("Maximum call stack size ... reached") instead of showing the real error. Such errors now go to your previous exception handler, or are reported exactly like PHP's default "Fatal error: Uncaught ..." (honouring display_errors / log_errors, exit code 255)
+- Process-level regression tests for the JSON error handler
+
 ## 1.4.2 - 2026-10-26
 
 - Setup mistakes throw `Core\ConfigException` (still an `InvalidArgumentException`) with clear fixes: misplaced keys say where they belong (`json_errors` inside `defaults`, `proxy` at the top level of `boot()`, `baseUrl` in `defaults`), typos get "did you mean" suggestions

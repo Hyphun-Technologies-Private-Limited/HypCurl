@@ -39,14 +39,22 @@ final class JsonErrorHandler
     /** @internal called by PHP for uncaught exceptions */
     public static function handle(\Throwable $e): void
     {
+        static $handling = false;
+        if ($handling) {
+            // Something failed while handling: never loop, just report it the default way.
+            self::reportLikePhp($e);
+        }
+        $handling = true;
+
         if (!$e instanceof HttpException && !$e instanceof ConfigException && !self::$allExceptions) {
             if (self::$previous !== null) {
                 (self::$previous)($e);
 
                 return;
             }
-            restore_exception_handler();
-            throw $e; // let PHP report it as usual
+            // Not ours and no other handler: report it exactly like PHP would.
+            // (Re-throwing from inside an exception handler makes PHP call this handler again: infinite loop.)
+            self::reportLikePhp($e);
         }
         if (PHP_SAPI !== 'cli') {
             // Keep the full details in the server's error log, whatever the client is shown.
@@ -54,6 +62,32 @@ final class JsonErrorHandler
         }
         self::render($e, self::$debug);
         exit(1);
+    }
+
+    /**
+     * PHP's own "Fatal error: Uncaught ..." output for an uncaught throwable, honouring
+     * display_errors / log_errors / html_errors, then exit(255) like PHP does.
+     */
+    private static function reportLikePhp(\Throwable $e): never
+    {
+        $text = 'Uncaught ' . $e . "\n  thrown in " . $e->getFile() . ' on line ' . $e->getLine();
+
+        if (filter_var(ini_get('log_errors'), FILTER_VALIDATE_BOOLEAN)) {
+            error_log("PHP Fatal error:  $text");
+        }
+        if (PHP_SAPI !== 'cli' && !headers_sent()) {
+            http_response_code(500);
+        }
+        $display = strtolower((string) ini_get('display_errors'));
+        if ($display === 'stderr' && PHP_SAPI === 'cli') {
+            fwrite(STDERR, "PHP Fatal error:  $text\n");
+        } elseif (in_array($display, ['1', 'on', 'true', 'yes', 'stdout', 'stderr'], true)) {
+            echo filter_var(ini_get('html_errors'), FILTER_VALIDATE_BOOLEAN) && PHP_SAPI !== 'cli'
+                ? "<br />\n<b>Fatal error</b>:  " . nl2br(htmlspecialchars($text)) . "<br />\n"
+                : "PHP Fatal error:  $text\n";
+        }
+
+        exit(255);
     }
 
     /** Write the JSON error (and, on the web, the status + Content-Type headers). */

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.5.0 - 2026-10-26
+
+- `Response` method accessors for every value: `body()`, `status()`, `headers()`, `cookies()`, `time()`, `method()`, `url()`, `finalUrl()`, `redirects()`, `redirectUrl()`, `error()`; plus `successful()` (alias of `ok()`) and `object()` (JSON as stdClass). Properties keep working
+- Calling an unknown method on `Response` / `Request` throws a `BadMethodCallException` with suggestions (`getBody()` → `body()`, `getStatusCode()` → `status()`, typos) or a note when a property was called like a method
+
 ## 1.4.3 - 2026-10-26
 
 - Fixed: with `json_errors` enabled, an uncaught non-HypCurl error (e.g. calling an undefined function) caused infinite recursion ("Maximum call stack size ... reached") instead of showing the real error. Such errors now go to your previous exception handler, or are reported exactly like PHP's default "Fatal error: Uncaught ..." (honouring display_errors / log_errors, exit code 255)

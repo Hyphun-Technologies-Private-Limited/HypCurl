@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hyphun\HypCurl\Http;
 
+use Hyphun\HypCurl\Core\HelpfulCalls;
+
 /**
  * Fluent request builder. Describes WHAT to send; HttpClient decides HOW.
  *
@@ -15,6 +17,8 @@ namespace Hyphun\HypCurl\Http;
  */
 final class Request
 {
+    use HelpfulCalls;
+
     /** @var array<string, ?string> null value = remove that header */
     public array $headers = [];
     /** @var array<string, mixed> */

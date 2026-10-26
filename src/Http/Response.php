@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hyphun\HypCurl\Http;
 
+use Hyphun\HypCurl\Core\HelpfulCalls;
+
 /**
  * Result of a request. Turn it into a JSON-ready envelope with toArray() / toJson():
  *   success: {"success": true,  "status": 200, "data": {...}}
@@ -11,6 +13,8 @@ namespace Hyphun\HypCurl\Http;
  */
 final class Response implements \JsonSerializable
 {
+    use HelpfulCalls;
+
     private mixed $decoded = null;
     private bool $decodedReady = false;
 
@@ -50,6 +54,86 @@ final class Response implements \JsonSerializable
             $this->method, $this->url, $this->status, $this->headers, $this->body, $this->time,
             $this->cookies, $this->finalUrl, $this->redirects, $this->redirectUrl, $error,
         );
+    }
+
+    // ---- Method-style accessors (same values as the properties: $res->body === $res->body()) ----
+
+    /** Raw response body. */
+    public function body(): string
+    {
+        return $this->body;
+    }
+
+    /** HTTP status code (0 when no response arrived). */
+    public function status(): int
+    {
+        return $this->status;
+    }
+
+    /** @return array<string, string> response headers, lower-cased names */
+    public function headers(): array
+    {
+        return $this->headers;
+    }
+
+    /** @return array<string, string> cookies set by this response */
+    public function cookies(): array
+    {
+        return $this->cookies;
+    }
+
+    /** Total time in seconds. */
+    public function time(): float
+    {
+        return $this->time;
+    }
+
+    /** URL that was requested. */
+    public function url(): string
+    {
+        return $this->url;
+    }
+
+    /** URL after following redirects. */
+    public function finalUrl(): string
+    {
+        return $this->finalUrl ?? $this->url;
+    }
+
+    /** HTTP method that was used. */
+    public function method(): string
+    {
+        return $this->method;
+    }
+
+    /** Number of redirects followed. */
+    public function redirects(): int
+    {
+        return $this->redirects;
+    }
+
+    /** Where a 3xx would have gone, when redirects were not followed. */
+    public function redirectUrl(): ?string
+    {
+        return $this->redirectUrl;
+    }
+
+    /** The failure, when sent with trySend() or 'throw' => false; null on success. */
+    public function error(): ?HttpException
+    {
+        return $this->error;
+    }
+
+    /** Alias of ok(): 2xx and no error. */
+    public function successful(): bool
+    {
+        return $this->ok();
+    }
+
+    /** JSON body decoded as an object (stdClass) instead of an array. */
+    public function object(): mixed
+    {
+        return $this->isJson() ? json_decode($this->body, false) : null;
     }
 
     /** 3xx response (only seen when redirects are not followed). */

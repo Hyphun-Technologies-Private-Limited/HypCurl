@@ -288,24 +288,33 @@ All of these work the same on `HypCurl::get(...)`, on a `HypCurl::client()`, and
 
 ## Responses
 
+Every value is available as a method or as a property, so `$res->body()` and `$res->body` are the same.
+
 ```php
-$res->status;              // 200 (0 if no response arrived)
-$res->ok();                // 2xx and no error
+$res->body();              // raw body (string)
+$res->json();              // decoded JSON as array
+$res->json('data.0.id');   // dot path into the JSON
+$res->object();            // decoded JSON as stdClass
+$res->status();            // 200 (0 if no response arrived)
+$res->ok();                // 2xx and no error (alias: successful())
 $res->failed();            // the opposite
-$res->error;               // the HttpException, when sent with trySend() / 'throw' => false
-$res->throw();             // throw that error now (returns $res if all is well)
-$res->json();              // decoded body
-$res->json('data.0.id');   // dot path
 $res->header('content-type');
-$res->cookie('session');   // cookie set by this response
-$res->body;  $res->time;  $res->url;
-$res->finalUrl;            // URL after redirects
-$res->redirects;           // how many redirects were followed
-$res->redirectUrl;         // Location of a 3xx that was NOT followed
+$res->headers();           // all headers, lower-cased names
+$res->cookie('session');   // a cookie set by this response
+$res->cookies();
+$res->time();              // seconds
+$res->method();  $res->url();
+$res->finalUrl();          // URL after redirects
+$res->redirects();         // how many redirects were followed
+$res->redirectUrl();       // Location of a 3xx that was NOT followed
 $res->isRedirect();        // 3xx (only when not following)
+$res->error();             // the HttpException, when sent with trySend() / 'throw' => false
+$res->throw();             // throw that error now (returns $res if all is well)
 $res->toArray();           // JSON-ready envelope (see Errors)
 $res->toJson();
 ```
+
+Calling a method that doesn't exist gives a hint instead of a bare fatal error, e.g. `getBody()` → *"Response has no method getBody(). Did you mean body()?"*.
 
 ## Errors
 

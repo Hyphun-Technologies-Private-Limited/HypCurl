@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.0 - 2026-10-26
+
+- Read one cookie from a client's session by name: `$client->cookie('name', ?domain)`, `$api->sessionCookie('name', ?domain)`, `HypCurl::cookie('name', ?domain)`; plus `HypCurl::cookies()` for the shortcut client
+- README: how to read cookie values (per response vs whole session)
+
 ## 1.5.0 - 2026-10-26
 
 - `Response` method accessors for every value: `body()`, `status()`, `headers()`, `cookies()`, `time()`, `method()`, `url()`, `finalUrl()`, `redirects()`, `redirectUrl()`, `error()`; plus `successful()` (alias of `ok()`) and `object()` (JSON as stdClass). Properties keep working

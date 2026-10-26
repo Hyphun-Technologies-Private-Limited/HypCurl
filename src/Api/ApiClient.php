@@ -90,6 +90,12 @@ abstract class ApiClient
         return $this;
     }
 
+    /** Value of one cookie in this API's session (from any earlier response), or null. */
+    public function sessionCookie(string $name, ?string $domain = null): ?string
+    {
+        return $this->http->cookie($name, $domain);
+    }
+
     /** Cookies held by this API's session (name, value, domain, path, ...). */
     public function sessionCookies(): array
     {

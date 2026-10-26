@@ -42,7 +42,7 @@ use Hyphun\HypCurl\Http\Request;
  */
 final class HypCurl
 {
-    public const VERSION = '1.5.0';
+    public const VERSION = '1.6.0';
 
     private static ?HttpClient $shared = null;
 
@@ -121,6 +121,18 @@ final class HypCurl
     public static function http(): HttpClient
     {
         return self::$shared ??= new HttpClient();
+    }
+
+    /** Value of a cookie collected by the HypCurl::get()/post()... calls so far, or null. */
+    public static function cookie(string $name, ?string $domain = null): ?string
+    {
+        return self::http()->cookie($name, $domain);
+    }
+
+    /** All cookies collected by the HypCurl::get()/post()... calls (name, value, domain, path, secure, expires). */
+    public static function cookies(): array
+    {
+        return self::http()->cookies();
     }
 
     /** Any method with a full URL: HypCurl::request('OPTIONS', 'https://...')->send() */

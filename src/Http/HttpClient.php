@@ -175,6 +175,31 @@ final class HttpClient
         return $cookies;
     }
 
+    /**
+     * Value of one cookie held by this client's session (set by any earlier response), or null.
+     *   $client->cookie('session')                      first cookie with that name
+     *   $client->cookie('session', 'shop.example.com')  only one valid for that host (subdomains included)
+     */
+    public function cookie(string $name, ?string $domain = null): ?string
+    {
+        foreach ($this->cookies() as $cookie) {
+            if ($cookie['name'] !== $name) {
+                continue;
+            }
+            if ($domain !== null) {
+                $cookieDomain = ltrim(strtolower($cookie['domain']), '.');
+                $host = strtolower($domain);
+                if ($host !== $cookieDomain && !str_ends_with($host, ".$cookieDomain")) {
+                    continue;
+                }
+            }
+
+            return urldecode($cookie['value']);
+        }
+
+        return null;
+    }
+
     /** Forget all cookies (and empty the jar file if one is used). */
     public function clearCookies(): void
     {

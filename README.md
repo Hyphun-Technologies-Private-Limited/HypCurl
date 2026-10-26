@@ -411,6 +411,28 @@ $api->sessionCookies();   // inspect
 $api->clearCookies();     // reset
 ```
 
+**Reading a cookie's value.**
+
+```php
+// Set by one particular response (its Set-Cookie headers, including along redirects)
+$login = $api->post('/login')->form([...])->send();
+$sid   = $login->cookie('session');
+$all   = $login->cookies();                         // ['session' => '...', ...]
+
+// From the whole session: anything collected by earlier requests
+$sid = $api->sessionCookie('session');              // API class
+$sid = $client->cookie('session');                  // HypCurl::client()
+$sid = HypCurl::cookie('session');                  // HypCurl::get()/post() shortcuts
+$sid = HypCurl::cookie('session', 'shop.example.com');   // only the one valid for that host
+
+HypCurl::cookies();   // every cookie: name, value, domain, path, secure, expires
+
+// A cookie that holds several values, e.g. "a=1&b=2"
+parse_str(HypCurl::cookie('cart'), $cart);          // $cart['b'] === '2'
+```
+
+Values are URL-decoded. A missing cookie returns `null`.
+
 Across separate CLI runs, use a cookie jar file:
 
 ```bash

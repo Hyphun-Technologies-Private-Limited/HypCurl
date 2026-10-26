@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.4.0 - 2026-10-26
+
+- Structured, readable errors: `HttpException` subclasses `NetworkException`, `TimeoutException`, `ProxyException`, `SslException`, `ClientException` (4xx), `ServerException` (5xx), each with `type`, `reason`, `hint`, `status()`, `retryable()`, curl code/message
+- Plain-language messages instead of raw curl errors (e.g. "Proxy refused the tunnel to api.example.com (proxy answered HTTP 503)"); upstream error messages are extracted from JSON bodies
+- JSON everywhere: `$e->toArray()/toJson()`, `json_encode($e)`, `$res->toArray()/toJson()` with a `debug: false` mode that is safe for end users
+- `->trySend()` never throws; `$res->error` holds the failure
+- `HypCurl::jsonErrors()` / `boot(['json_errors' => ...])`: uncaught HypCurl errors render as JSON (502/504 on the web, exit 1 in the CLI)
+- Retries skip non-temporary failures (TLS errors, redirect loops, invalid URLs)
+- Secrets in URLs (passwords, token/api_key-style query params) are masked in errors, logs and printed curl commands
+- CLI prints the JSON error on failure
+- Changed: a client with `'throw' => false` now also returns (instead of throwing) on network errors; a missing `caBundle` file throws `InvalidArgumentException`
+
 ## 1.3.0 - 2026-10-26
 
 - Global settings: `HypCurl::boot(['defaults' => [...]])` / `HypCurl::defaults([...])` apply proxy, TLS, redirects, timeouts, retries, headers, cookies to every client; client options and per-request calls still win; unknown keys are rejected

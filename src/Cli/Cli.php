@@ -140,10 +140,8 @@ final class Cli
 
             return 0;
         } catch (HttpException $e) {
-            // HttpClient already logged the failure; just show the error body if there is one.
-            if ($e->response !== null) {
-                $this->output($e->response);
-            }
+            // Structured JSON error (type, message, hint, request, curl / response details) on stdout.
+            echo $e->toJson(), "\n";
 
             return 1;
         } catch (\ArgumentCountError $e) {

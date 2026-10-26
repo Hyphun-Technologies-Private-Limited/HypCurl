@@ -6,6 +6,7 @@ namespace Hyphun\HypCurl\Tests;
 
 use Hyphun\HypCurl\Http\HttpClient;
 use Hyphun\HypCurl\Http\HttpException;
+use Hyphun\HypCurl\Http\TimeoutException;
 use Hyphun\HypCurl\HypCurl;
 use Hyphun\HypCurl\Tests\Fixtures\TestApi;
 
@@ -135,9 +136,11 @@ final class HttpClientTest extends TestCase
         try {
             $this->client()->get('/sleep/2')->timeout(1)->send();
             $this->fail('Expected HttpException');
-        } catch (HttpException $e) {
+        } catch (TimeoutException $e) {
             $this->assertNull($e->response);
-            $this->assertStringContainsString('curl error 28', $e->getMessage());
+            $this->assertSame('timeout', $e->type);
+            $this->assertSame(28, $e->curlCode);
+            $this->assertStringContainsString('timed out after 1s', $e->getMessage());
         }
     }
 

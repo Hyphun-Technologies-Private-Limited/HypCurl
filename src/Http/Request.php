@@ -234,4 +234,20 @@ final class Request
 
         return $this->client->send($this);
     }
+
+    /**
+     * Like send(), but never throws on request failures: check $res->ok() / $res->error,
+     * or return $res->toArray() as JSON.
+     *
+     *   $res = $api->get('/users')->trySend();
+     *   return $res->ok() ? $res->json() : $res->toArray(debug: false);
+     */
+    public function trySend(): Response
+    {
+        try {
+            return $this->send();
+        } catch (HttpException $e) {
+            return $e->response?->withError($e) ?? Response::failure($this->method, $e->url ?? $this->path, $e);
+        }
+    }
 }

@@ -10,6 +10,7 @@ Organised, reusable cURL toolkit for PHP 8.1+. Define each external API once as 
 - **Cookie sessions:** kept in memory, or in a cookie-jar file that persists between runs
 - **Global settings:** set the proxy, SSL, redirects, timeouts and headers once with `HypCurl::boot(['defaults' => [...]])`
 - **Proxy support:** HTTP, HTTPS and SOCKS, with credentials masked in logs
+- **Readable, JSON-ready errors:** typed exceptions (`TimeoutException`, `ProxyException`, …) with hints, `toJson()`, `trySend()`, and uncaught errors rendered as JSON
 - **SSL and redirect control:** verify or skip TLS checks, trust a custom CA, follow or limit redirects
 - **Custom headers:** layered (global → per-API → per-request), and you can remove any header
 - **CLI:** call any API method with `vendor/bin/hypcurl`, and see the equivalent `curl` command with `-v`
@@ -282,9 +283,92 @@ $res->finalUrl;            // URL after redirects
 $res->redirects;           // how many redirects were followed
 $res->redirectUrl;         // Location of a 3xx that was NOT followed
 $res->isRedirect();        // 3xx (only when not following)
+$res->toArray();           // JSON-ready envelope (see Errors)
+$res->toJson();
 ```
 
-4xx and 5xx responses throw `Hyphun\HypCurl\Http\HttpException`, and `$e->response` holds the response. Network errors and timeouts throw the same exception, with `$e->response === null`. To get the response back instead of an exception, pass `'throw' => false` in the client options.
+## Errors
+
+Every failure throws a structured exception with a readable message, a machine-readable `type`, and a hint on how to fix it. All of them extend `HttpException`:
+
+```
+HttpException
+├─ NetworkException     no response: dns_error, connection_error, empty_response, too_many_redirects, invalid_url
+│  ├─ TimeoutException  timeout
+│  ├─ ProxyException    proxy_error
+│  └─ SslException      ssl_error
+├─ ClientException      4xx: bad_request, unauthorized, forbidden, not_found, validation_error, rate_limited, ...
+└─ ServerException      5xx: server_error
+```
+
+```php
+use Hyphun\HypCurl\Http\{HttpException, ClientException, TimeoutException, ProxyException};
+
+try {
+    $user = $api->get('/users/7')->send()->json();
+} catch (ClientException $e) {
+    if ($e->type === 'not_found') { /* ... */ }
+} catch (TimeoutException | ProxyException $e) {
+    // ...
+} catch (HttpException $e) {         // everything else
+    $e->type;        // 'server_error', 'dns_error', ...
+    $e->reason;      // "503 Service Unavailable: Maintenance" (short, no URL)
+    $e->getMessage();// reason + (METHOD url)
+    $e->hint;        // what to check
+    $e->status();    // HTTP status, or null if no response
+    $e->response;    // Response for 4xx/5xx
+    $e->retryable(); // temporary problem?
+}
+```
+
+**JSON.** Exceptions and responses share one envelope:
+
+```php
+$e->toArray();                // full details: hint, request, curl code, upstream body (logs, development)
+$e->toArray(debug: false);    // only type, message, status: safe to return to end users
+$e->toJson();  json_encode($e);
+```
+
+```json
+{
+    "success": false,
+    "error": {
+        "type": "proxy_error",
+        "message": "Proxy refused the tunnel to api.example.com (proxy answered HTTP 503)",
+        "hint": "The proxy http://10.0.0.1:3128 could not reach api.example.com or is overloaded. ...",
+        "request": { "method": "GET", "url": "https://api.example.com/users" },
+        "curl": { "code": 56, "message": "CONNECT tunnel failed, response 503" }
+    }
+}
+```
+
+Success looks like `{"success": true, "status": 200, "data": {...}}`.
+
+**Without exceptions.** `trySend()` never throws; check the result instead:
+
+```php
+$res = $api->get('/users')->trySend();
+
+if ($res->ok()) {
+    return $res->json();
+}
+$res->error->type;                     // the exception, if you need it
+return $res->toArray(debug: false);    // or pass the error straight through as JSON
+```
+
+A client created with `'throw' => false` behaves the same way for every request.
+
+**Uncaught errors become JSON.** Add this once at startup, and an uncaught HypCurl error becomes a clean JSON response instead of `Fatal error: Uncaught ...` with a stack trace:
+
+```php
+HypCurl::boot(['json_errors' => true]);                // production: type + message only
+HypCurl::boot(['json_errors' => ['debug' => true]]);   // development: + hint, URL, curl, upstream body
+// or HypCurl::jsonErrors(debug: false, allExceptions: false);
+```
+
+On the web it responds `502 Bad Gateway`, or `504` for timeouts, with `Content-Type: application/json`. In the CLI it prints the JSON and exits with code 1. Other exceptions go to your existing handler unless you pass `'all' => true`.
+
+Secrets are hidden everywhere errors and logs appear: passwords in URLs, and `token`/`api_key`/`password`-style query parameters, are shown as `****`.
 
 ## Cookies: chained requests
 
@@ -385,6 +469,7 @@ composer install
 composer test        # PHPUnit; spins up a local server, no internet needed
 php examples/direct_usage.php
 php examples/global_settings.php
+php examples/error_handling.php
 php examples/demo_flow.php
 php examples/cookie_flow.php
 ```

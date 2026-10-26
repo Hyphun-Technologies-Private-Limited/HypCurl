@@ -85,7 +85,8 @@ final class SettingsTest extends TestCase
             HypCurl::get(HYPCURL_TEST_SERVER . '/redirect/5')->followRedirects(true, 2)->send();
             $this->fail('Expected too many redirects');
         } catch (HttpException $e) {
-            $this->assertStringContainsString('curl error 47', $e->getMessage());
+            $this->assertSame('too_many_redirects', $e->type);
+            $this->assertSame(47, $e->curlCode);
         }
     }
 
@@ -114,7 +115,7 @@ final class SettingsTest extends TestCase
     {
         $client = HypCurl::client(['caBundle' => '/nope/ca.pem', 'retries' => 0]);
 
-        $this->expectException(HttpException::class);
+        $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('CA bundle not found: /nope/ca.pem');
         $client->get(HYPCURL_TEST_SERVER . '/echo')->send();
     }

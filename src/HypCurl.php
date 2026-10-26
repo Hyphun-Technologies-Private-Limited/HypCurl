@@ -8,6 +8,7 @@ use Hyphun\HypCurl\Api\ApiClient;
 use Hyphun\HypCurl\Core\Config;
 use Hyphun\HypCurl\Core\Logger;
 use Hyphun\HypCurl\Http\HttpClient;
+use Hyphun\HypCurl\Http\JsonErrorHandler;
 use Hyphun\HypCurl\Http\Request;
 
 /**
@@ -27,6 +28,7 @@ use Hyphun\HypCurl\Http\Request;
  *           'headers'   => ['X-App' => 'my-app'],
  *           'timeout'   => 20,
  *       ],
+ *       'json_errors' => true,                        // uncaught HypCurl errors -> JSON (or ['debug' => true])
  *   ]);
  *
  * Use directly from any class:
@@ -39,19 +41,35 @@ use Hyphun\HypCurl\Http\Request;
  */
 final class HypCurl
 {
-    public const VERSION = '1.3.0';
+    public const VERSION = '1.4.0';
 
     private static ?HttpClient $shared = null;
 
     /** Call once at startup. Re-booting resets config, logger, defaults, the shared client and all API client singletons. */
     public static function boot(array $options = []): void
     {
-        Config::configure(array_diff_key($options, ['logger' => true, 'defaults' => true]));
+        Config::configure(array_diff_key($options, ['logger' => true, 'defaults' => true, 'json_errors' => true]));
         Logger::reset();
         if (isset($options['logger'])) {
             Logger::instance()->useLogger($options['logger']);
         }
         self::defaults($options['defaults'] ?? []);
+        if (!empty($options['json_errors'])) {
+            $json = is_array($options['json_errors']) ? $options['json_errors'] : [];
+            self::jsonErrors($json['debug'] ?? false, $json['all'] ?? false);
+        }
+    }
+
+    /**
+     * Render uncaught HypCurl exceptions as JSON instead of a fatal error + stack trace.
+     *   Web: 502 (504 for timeouts), Content-Type: application/json.   CLI: JSON on stdout, exit code 1.
+     *
+     * @param bool $debug         include request URL, curl details and the upstream response body (never in production)
+     * @param bool $allExceptions also render non-HypCurl exceptions (as "internal_error")
+     */
+    public static function jsonErrors(bool $debug = false, bool $allExceptions = false): void
+    {
+        JsonErrorHandler::register($debug, $allExceptions);
     }
 
     /**

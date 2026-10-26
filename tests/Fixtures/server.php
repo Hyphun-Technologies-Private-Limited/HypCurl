@@ -26,6 +26,20 @@ if (preg_match('#^/status/(\d+)$#', $path, $m)) {
     echo json_encode(['status' => (int) $m[1]]);
     return;
 }
+if (preg_match('#^/error/(\d+)$#', $path, $m)) {
+    // API-style error body, e.g. /error/422?message=Email+is+invalid
+    http_response_code((int) $m[1]);
+    if (isset($_GET['retry_after'])) {
+        header('Retry-After: ' . $_GET['retry_after']);
+    }
+    echo json_encode(['message' => $_GET['message'] ?? 'Something went wrong', 'errors' => ['email' => ['invalid']]]);
+    return;
+}
+if ($_SERVER['REQUEST_METHOD'] === 'CONNECT') {
+    // Acting as a proxy that refuses HTTPS tunnels (like the "CONNECT tunnel failed, response 503" case).
+    http_response_code(503);
+    return;
+}
 if ($path === '/flaky') {
     $file = sys_get_temp_dir() . '/hypcurl-flaky-' . preg_replace('/\W/', '', $_GET['key'] ?? 'x');
     $count = (int) @file_get_contents($file);

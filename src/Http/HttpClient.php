@@ -248,15 +248,15 @@ final class HttpClient
         }
 
         $proxy = $request->proxy ?? $this->proxy;
-        $this->log->info("→ $request->method $url" . ($proxy ? ' (via proxy ' . self::maskUrl($proxy) . ')' : ''));
+        $this->log->info("→ $request->method " . Redact::url($url) . ($proxy ? ' (via proxy ' . Redact::url($proxy) . ')' : ''));
         for ($attempt = 1; ; $attempt++) {
             try {
                 $response = $this->execute($request, $url, $headers);
                 $shouldRetry = $response->status === 429 || $response->status >= 500;
                 $error = null;
-            } catch (HttpException $e) {
+            } catch (NetworkException $e) {
                 $response = null;
-                $shouldRetry = true;
+                $shouldRetry = $e->retryable(); // no point retrying a bad certificate or a redirect loop
                 $error = $e;
             }
 
@@ -264,23 +264,36 @@ final class HttpClient
                 break;
             }
             $delayMs = $this->retryDelayMs * (2 ** ($attempt - 1));
-            $reason = $error?->getMessage() ?? "HTTP $response->status";
+            $reason = $error?->reason ?? "HTTP $response->status";
             $this->log->warn("Attempt $attempt failed ($reason) — retrying in {$delayMs}ms");
             usleep($delayMs * 1000);
         }
 
         if ($error !== null) {
-            $this->log->error("← {$error->getMessage()}");
+            $this->log->error("✗ {$error->getMessage()}" . ($error->hint ? "\n         hint: $error->hint" : ''));
+            if (!$this->throw) {
+                return Response::failure($request->method, $url, $error);
+            }
             throw $error;
         }
 
         $summary = sprintf('← %d in %.3fs', $response->status, $response->time)
-            . ($response->redirects > 0 ? " after $response->redirects redirect(s) → $response->finalUrl" : '')
-            . ($response->redirectUrl !== null ? " (redirect to $response->redirectUrl not followed)" : '')
+            . ($response->redirects > 0 ? " after $response->redirects redirect(s) → " . Redact::url((string) $response->finalUrl) : '')
+            . ($response->redirectUrl !== null ? ' (redirect to ' . Redact::url($response->redirectUrl) . ' not followed)' : '')
             . ($request->saveTo ? " (saved to $request->saveTo)" : '');
-        $response->failed() ? $this->log->error($summary) : $this->log->info($summary);
+        if (!$response->failed()) {
+            $this->log->info($summary);
 
-        return $this->throw ? $response->throw() : $response;
+            return $response;
+        }
+
+        $error = HttpException::fromResponse($response);
+        $this->log->error($summary . " — $error->reason" . ($error->hint ? "\n         hint: $error->hint" : ''));
+        if ($this->throw) {
+            throw $error;
+        }
+
+        return $response->withError($error);
     }
 
     private function execute(Request $request, string $url, array $headers): Response
@@ -336,7 +349,7 @@ final class HttpClient
         }
         if ($verifySsl && $this->caBundle !== null) {
             if (!is_file($this->caBundle)) {
-                throw new HttpException("CA bundle not found: $this->caBundle");
+                throw new \InvalidArgumentException("CA bundle not found: $this->caBundle (check the 'caBundle' option / HYPCURL_CA_BUNDLE)");
             }
             $options[CURLOPT_CAINFO] = $this->caBundle;
         }
@@ -387,7 +400,11 @@ final class HttpClient
         }
 
         if ($errno !== 0) {
-            throw new HttpException("curl error $errno: $error ($request->method " . self::maskUrl($url) . ')');
+            throw HttpException::fromCurl($errno, $error, $request->method, $url, [
+                'proxy' => $request->proxy ?? $this->proxy,
+                'timeout' => $request->timeout ?? $this->timeout,
+                'maxRedirects' => $request->maxRedirects ?? $this->maxRedirects,
+            ]);
         }
 
         return new Response(
@@ -416,12 +433,6 @@ final class HttpClient
         if (!is_dir($dir) && !mkdir($dir, 0700, true) && !is_dir($dir)) {
             throw new \RuntimeException("Cannot create directory $dir");
         }
-    }
-
-    /** Hide passwords in URLs like http://user:secret@proxy:8080 */
-    private static function maskUrl(string $url): string
-    {
-        return preg_replace('#(//[^:/@]+):[^@/]*@#', '$1:****@', $url);
     }
 
     private function buildUrl(Request $request): string
@@ -478,7 +489,7 @@ final class HttpClient
         }
         $proxy = $request->proxy ?? $this->proxy;
         if ($proxy !== null) {
-            array_push($parts, '-x', escapeshellarg(self::maskUrl($proxy)));
+            array_push($parts, '-x', escapeshellarg(Redact::url($proxy)));
             if ($proxy !== '' && $this->noProxy !== null) {
                 array_push($parts, '--noproxy', escapeshellarg($this->noProxy));
             }
@@ -495,7 +506,7 @@ final class HttpClient
             $parts[] = '-o';
             $parts[] = escapeshellarg($request->saveTo);
         }
-        $parts[] = escapeshellarg($url);
+        $parts[] = escapeshellarg(Redact::url($url));
 
         return implode(' ', $parts);
     }

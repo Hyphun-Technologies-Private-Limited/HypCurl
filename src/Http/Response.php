@@ -4,7 +4,12 @@ declare(strict_types=1);
 
 namespace Hyphun\HypCurl\Http;
 
-final class Response
+/**
+ * Result of a request. Turn it into a JSON-ready envelope with toArray() / toJson():
+ *   success: {"success": true,  "status": 200, "data": {...}}
+ *   failure: {"success": false, "error": {"type": "not_found", "message": "...", "status": 404, "hint": "..."}}
+ */
+final class Response implements \JsonSerializable
 {
     private mixed $decoded = null;
     private bool $decodedReady = false;
@@ -15,6 +20,7 @@ final class Response
      * @param ?string $finalUrl    URL that produced this response, after following redirects
      * @param int $redirects       number of redirects followed
      * @param ?string $redirectUrl where a redirect would have gone, when redirects were NOT followed
+     * @param ?HttpException $error the failure, when the request was sent with trySend() or 'throw' => false
      */
     public function __construct(
         public readonly string $method,
@@ -27,7 +33,23 @@ final class Response
         public readonly ?string $finalUrl = null,
         public readonly int $redirects = 0,
         public readonly ?string $redirectUrl = null,
+        public readonly ?HttpException $error = null,
     ) {
+    }
+
+    /** A Response standing in for a request that got no HTTP response at all (network error). */
+    public static function failure(string $method, string $url, HttpException $error): self
+    {
+        return new self($method, $url, 0, [], '', 0.0, error: $error);
+    }
+
+    /** Same response with the failure attached. */
+    public function withError(HttpException $error): self
+    {
+        return new self(
+            $this->method, $this->url, $this->status, $this->headers, $this->body, $this->time,
+            $this->cookies, $this->finalUrl, $this->redirects, $this->redirectUrl, $error,
+        );
     }
 
     /** 3xx response (only seen when redirects are not followed). */
@@ -44,12 +66,12 @@ final class Response
 
     public function ok(): bool
     {
-        return $this->status >= 200 && $this->status < 300;
+        return $this->error === null && $this->status >= 200 && $this->status < 300;
     }
 
     public function failed(): bool
     {
-        return $this->status === 0 || $this->status >= 400;
+        return $this->error !== null || $this->status === 0 || $this->status >= 400;
     }
 
     public function header(string $name): ?string
@@ -87,14 +109,44 @@ final class Response
         return $value;
     }
 
-    /** Throw if the request failed; otherwise return $this for chaining. */
+    /** Throw the matching exception if the request failed; otherwise return $this for chaining. */
     public function throw(): self
     {
+        if ($this->error !== null) {
+            throw $this->error;
+        }
         if ($this->failed()) {
-            throw new HttpException("$this->method $this->url returned HTTP $this->status", $this);
+            throw HttpException::fromResponse($this);
         }
 
         return $this;
+    }
+
+    /**
+     * JSON-ready envelope, e.g. to return from your own API endpoint.
+     *
+     * @param bool $debug failures only: include request/curl/response details (see HttpException::toArray)
+     */
+    public function toArray(bool $debug = true): array
+    {
+        if ($this->failed()) {
+            return ($this->error ?? HttpException::fromResponse($this))->toArray($debug);
+        }
+
+        return ['success' => true, 'status' => $this->status, 'data' => $this->isJson() ? $this->json() : $this->body];
+    }
+
+    public function toJson(bool $debug = true, int $flags = JSON_PRETTY_PRINT): string
+    {
+        return (string) json_encode(
+            $this->toArray($debug),
+            $flags | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
+        );
+    }
+
+    public function jsonSerialize(): array
+    {
+        return $this->toArray();
     }
 
     /** Pretty JSON if possible, raw body otherwise. */

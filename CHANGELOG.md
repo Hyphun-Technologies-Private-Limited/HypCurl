@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0 - 2026-10-26
+
+- Direct use without an API class: `HypCurl::get/post/put/patch/delete/request()` with full URLs (shared client that keeps cookies) and `HypCurl::client([...])` for a configured client inside existing classes
+- Relative paths on a client without `baseUrl` now fail with a clear error
+- New example: `examples/direct_usage.php`
+
 ## 1.1.0 - 2026-10-26
 
 - `hypcurl make:api [Name]`: generates a ready-to-edit API class (default `HypClass`) from a template, using the project's PSR-4 namespace, and registers it in `hypcurl.php`

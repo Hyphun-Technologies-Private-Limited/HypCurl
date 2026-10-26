@@ -2,6 +2,7 @@
 
 Organised, reusable cURL toolkit for PHP 8.1+. Define each external API once as a small class, then call it from code or the terminal. Retries, timeouts, cookies, proxies, custom headers and logging are handled in one place.
 
+- **Direct use, no class needed:** `HypCurl::get($url)->send()->json()` from any class you already have
 - **Ready-made template:** `hypcurl make:api` generates `HypClass`, a working API class you fill in
 - **Singleton API clients:** `HypClass::instance()->items()->find(7)`
 - **Fluent requests:** `$api->post('/orders')->json($data)->bearer($token)->retries(2)->send()`
@@ -104,6 +105,71 @@ vendor/bin/hypcurl hypclass items.find 7
 
 Without the generator, a class only needs to extend `Hyphun\HypCurl\Api\ApiClient` and implement `options()`.
 
+## Use it directly (no extra class)
+
+You don't have to create an API class. Call HypCurl from any class you already have.
+
+**One-off calls** with a full URL:
+
+```php
+use Hyphun\HypCurl\HypCurl;
+
+$users = HypCurl::get('https://api.example.com/users')->query(['page' => 2])->send()->json();
+
+$order = HypCurl::post('https://api.example.com/orders')
+    ->json(['item' => 'pen', 'qty' => 2])
+    ->bearer($token)
+    ->send();
+
+$id = $order->json('id');
+```
+
+`HypCurl::get/post/put/patch/delete/request()` share one client, so cookies are kept between calls, like a browser.
+
+**A configured client in your existing class.** Set the base URL, auth, headers and retries once, then use the client in any method:
+
+```php
+use Hyphun\HypCurl\Http\HttpClient;
+use Hyphun\HypCurl\Http\HttpException;
+use Hyphun\HypCurl\HypCurl;
+
+class OrderService
+{
+    private HttpClient $shop;
+
+    public function __construct()
+    {
+        $this->shop = HypCurl::client([
+            'baseUrl' => 'https://shop.example.com/api',
+            'headers' => ['X-Api-Key' => getenv('SHOP_API_KEY')],
+            'retries' => 2,
+            'timeout' => 15,
+        ]);
+    }
+
+    public function find(int $id): ?array
+    {
+        try {
+            return $this->shop->get("/orders/$id")->send()->json();
+        } catch (HttpException $e) {
+            if ($e->response?->status === 404) {
+                return null;
+            }
+            throw $e;
+        }
+    }
+
+    public function create(array $order): int
+    {
+        return $this->shop->post('/orders')->json($order)->send()->json('id');
+    }
+}
+```
+
+Each `HypCurl::client()` has its own settings, cookies and connection. Every request option shown below (headers, cookies, proxy, uploads, …) works the same way. See [examples/direct_usage.php](examples/direct_usage.php).
+
+**Which approach to use:** direct use suits a few calls inside an existing class. An API class (`make:api`) is better when an API is used in many places, or when you want to call it from the terminal.
+
 ## Configuration
 
 HypCurl works without any setup. It reads `HYPCURL_*` environment variables and falls back to built-in defaults. To use config files, or to plug in your app's logger, call `boot()` once at startup:
@@ -161,12 +227,7 @@ $res = $api->post('/orders')
     ->send();
 ```
 
-Any `HttpClient` works without defining an `ApiClient`:
-
-```php
-$http = new \Hyphun\HypCurl\Http\HttpClient(['baseUrl' => 'https://example.com']);
-$http->get('/status')->send();
-```
+All of these work the same on `HypCurl::get(...)`, on a `HypCurl::client()`, and inside an API class.
 
 ## Responses
 
@@ -247,6 +308,7 @@ Each API client keeps one curl handle open, so connections are reused, and frees
 ```bash
 composer install
 composer test        # PHPUnit; spins up a local server, no internet needed
+php examples/direct_usage.php
 php examples/demo_flow.php
 php examples/cookie_flow.php
 ```

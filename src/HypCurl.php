@@ -7,10 +7,13 @@ namespace Hyphun\HypCurl;
 use Hyphun\HypCurl\Api\ApiClient;
 use Hyphun\HypCurl\Core\Config;
 use Hyphun\HypCurl\Core\Logger;
+use Hyphun\HypCurl\Http\HttpClient;
+use Hyphun\HypCurl\Http\Request;
 
 /**
- * Entry point for configuring HypCurl. Optional: without boot(), HypCurl uses
- * environment variables and Config::DEFAULTS.
+ * Entry point: configuration, plus shortcuts for making requests without writing an ApiClient class.
+ *
+ * Configure (optional; without boot(), HypCurl uses environment variables and Config::DEFAULTS):
  *
  *   HypCurl::boot([
  *       'config_dir' => __DIR__ . '/config/hypcurl',  // default.env, {env}.env, local.env
@@ -19,17 +22,28 @@ use Hyphun\HypCurl\Core\Logger;
  *       'base_path'  => __DIR__,                      // for relative paths (cookie jar); default: cwd
  *       'logger'     => $psrLogger,                   // any PSR-3 logger
  *   ]);
+ *
+ * Use directly from any class:
+ *
+ *   HypCurl::get('https://api.example.com/users')->query(['page' => 2])->send()->json();
+ *   HypCurl::post('https://api.example.com/orders')->json($order)->bearer($token)->send();
+ *
+ *   $shop = HypCurl::client(['baseUrl' => 'https://shop.example.com/api', 'retries' => 2]);
+ *   $shop->get('/orders/7')->send();
  */
 final class HypCurl
 {
-    public const VERSION = '1.1.0';
+    public const VERSION = '1.2.0';
 
-    /** Call once at startup. Re-booting resets config, logger and all API client singletons. */
+    private static ?HttpClient $shared = null;
+
+    /** Call once at startup. Re-booting resets config, logger, the shared client and all API client singletons. */
     public static function boot(array $options = []): void
     {
         Config::configure(array_diff_key($options, ['logger' => true]));
         Logger::reset();
         ApiClient::resetAll();
+        self::$shared = null;
         if (isset($options['logger'])) {
             Logger::instance()->useLogger($options['logger']);
         }
@@ -39,4 +53,34 @@ final class HypCurl
     {
         return Config::instance();
     }
+
+    // ---- Direct use, no class needed ----
+
+    /**
+     * A new client with its own settings, cookies and connection. Keep it in a property of your class:
+     *   $this->shop = HypCurl::client(['baseUrl' => '...', 'headers' => [...], 'retries' => 2]);
+     * Options are the same as for an ApiClient's options() (see HttpClient).
+     */
+    public static function client(array $options = []): HttpClient
+    {
+        return new HttpClient($options);
+    }
+
+    /** The shared client behind HypCurl::get()/post()/...; keeps cookies between calls like a browser. */
+    public static function http(): HttpClient
+    {
+        return self::$shared ??= new HttpClient();
+    }
+
+    /** Any method with a full URL: HypCurl::request('OPTIONS', 'https://...')->send() */
+    public static function request(string $method, string $url): Request
+    {
+        return self::http()->request($method, $url);
+    }
+
+    public static function get(string $url): Request    { return self::http()->get($url); }
+    public static function post(string $url): Request   { return self::http()->post($url); }
+    public static function put(string $url): Request    { return self::http()->put($url); }
+    public static function patch(string $url): Request  { return self::http()->patch($url); }
+    public static function delete(string $url): Request { return self::http()->delete($url); }
 }

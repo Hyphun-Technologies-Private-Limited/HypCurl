@@ -347,9 +347,13 @@ final class HttpClient
 
     private function buildUrl(Request $request): string
     {
-        $url = preg_match('#^https?://#i', $request->path)
-            ? $request->path
-            : $this->baseUrl . '/' . ltrim($request->path, '/');
+        if (preg_match('#^https?://#i', $request->path)) {
+            $url = $request->path;
+        } elseif ($this->baseUrl !== '') {
+            $url = $this->baseUrl . '/' . ltrim($request->path, '/');
+        } else {
+            throw new \InvalidArgumentException("'$request->path' is not a full URL and this client has no baseUrl");
+        }
 
         if ($request->query !== []) {
             // http_build_query turns true/false into 1/0; APIs usually expect "true"/"false".
